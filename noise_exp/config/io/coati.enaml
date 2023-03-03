@@ -1,0 +1,62 @@
+from enaml.workbench.api import Extension, PluginManifest
+
+from psiaudio.calibration import FlatCalibration
+from psiaudio.util import dbi
+from psi.controller.engines.nidaq import (NIDAQEngine,
+                                          NIDAQHardwareAIChannel,
+                                          NIDAQHardwareAOChannel)
+
+AI_MODE = 'differential'
+
+
+enamldef IOManifest(PluginManifest): manifest:
+
+    Extension:
+        id = 'backend'
+        point = 'psi.controller.io'
+
+        NIDAQEngine: engine:
+            name = 'NI'
+            master_clock = True
+
+            hw_ai_monitor_period = 1
+            hw_ao_monitor_period = 1
+
+            NIDAQHardwareAOChannel:
+                label = 'Array Speaker'
+                name = 'speaker_array'
+                channel = 'Dev1/ao0'
+                fs = 100e3
+                expected_range = (-10, 10)
+                dtype = 'float64'
+                terminal_mode = 'RSE'
+                filter_delay = 0
+
+                calibration_user_editable = False
+                calibration = FlatCalibration.from_db(88, vrms=dbi(-9))
+
+            NIDAQHardwareAOChannel:
+                label = 'Horn Speaker'
+                name = 'speaker_horn'
+                channel = 'Dev1/ao1'
+                fs = 100e3
+                expected_range = (-10, 10)
+                dtype = 'float64'
+                terminal_mode = 'RSE'
+                filter_delay = 0
+
+                calibration_user_editable = False
+                calibration = FlatCalibration.from_db(88, vrms=dbi(-9))
+
+            NIDAQHardwareAIChannel:
+                label = 'Microphone'
+                name = 'microphone'
+                channel = 'Dev1/ai0'
+                fs = 100e3
+                expected_range = (-10, 10)
+                dtype = 'float64'
+                terminal_mode = AI_MODE
+                start_trigger = 'ao/StartTrigger'
+                calibration_user_editable = False
+                calibration = FlatCalibration.from_mv_pa(2.12)
+                gain = 0

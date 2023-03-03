@@ -1,0 +1,65 @@
+from pathlib import Path
+import subprocess
+
+from atom.api import Atom, Str
+from enaml.widgets.api import (
+    Container, Field, Form, HGroup, Label, MainWindow, ObjectCombo, PushButton
+)
+
+from psi.application import list_preferences
+
+
+class Settings(Atom):
+
+    cohort = Str()
+    experimenter = Str()
+    note = Str()
+    preference = Str()
+
+    def run_experiment(self, save=True):
+        filename = f'{{date_time}} {self.experimenter} {self.cohort} {self.note} noise-exposure'
+        filename = ' '.join(filename.split())
+        args = ['psi', 'noise_exposure']
+        if self.preference:
+            args.extend(['--preference', self.preference])
+        if save:
+            args.append(str(DATA_ROOT / filename))
+        #args.extend([
+        #    '--preferences', experiment.preference,
+        #    '--debug-level-console', self.logging_level.upper(),
+        #])
+        #for plugin in experiment.plugins:
+        #    args.extend(['--plugin', plugin])
+        print(' '.join(args))
+        subprocess.check_output(args)
+
+enamldef Main(MainWindow):
+
+    title = 'Noise Exposure'
+
+    attr settings = Settings()
+
+    Container:
+        Form:
+            Label:
+                text = 'Cohort'
+            Field:
+                text := settings.cohort
+            Label:
+                text = 'Experimenter'
+            Field:
+                text := settings.experimenter
+            Label:
+                text = 'Note'
+            Field:
+                text := settings.note
+
+        HGroup:
+            ObjectCombo: preferences:
+                items = [str(p) for p in list_preferences('noise_exposure')]
+                selected := settings.preference
+                to_string = lambda x: Path(x).stem
+            PushButton: start:
+                text = 'Start'
+                clicked ::
+                    settings.run_experiment(save=False)

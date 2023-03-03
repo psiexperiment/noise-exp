@@ -1,0 +1,35 @@
+[project]
+name = "noise-exp"
+description = "Noise exposure using psiexperiment"
+readme = "readme.md"
+requires-python = ">=3.7"
+license = {file = "LICENSE.txt"}
+authors = [
+    {name = "Brad Buran", email="buran@ohsu.edu"},
+]
+maintainers = [
+    {name = "Brad Buran", email="buran@ohsu.edu"},
+]
+dependencies = [
+    "psiaudio",
+    "psiexperiment",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+ni = ["pydaqmx"]
+tdt = ["tdtpy >=0.9.0"]
+docs = ["sphinx", "sphinx_rtd_theme", "pygments-enaml"]
+test = ["pytest", "pytest-console-scripts", "matplotlib"] # Matplotlib is used in some of the validation scripts.
+zarr-backend = ["zarr"]
+dev = ["coloredlogs"]
+
+[project.scripts]
+noise-exp = "noise_exp.main:main"
+
+[build-system]
+requires = ["setuptools>=61.2", "wheel", "setuptools_scm[toml]>=3.4.3"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "noise_exp/version.py"
