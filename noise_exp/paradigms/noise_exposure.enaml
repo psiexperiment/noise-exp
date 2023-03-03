@@ -5,23 +5,22 @@ import numpy as np
 
 from enaml.widgets.api import ProgressBar
 from enaml.workbench.api import Extension
-from enaml.workbench.core.api import Command
-from enaml.workbench.ui.api import Branding
 
 from psiaudio.pipeline import coroutine
-from psi.context.api import ContextGroup, EnumParameter, Parameter
-from psi.controller.api import (ControllerManifest, EpochOutput,
-                                ExperimentAction, ExperimentCallback)
+from psi.context.api import ContextGroup
+from psi.controller.api import (
+    ControllerManifest, ExperimentAction, ExperimentCallback
+)
 
-from psi.controller.input import (Coroutine, Input, IIRFilter, RMS, SPL)
+from psi.controller.input import (Coroutine, IIRFilter, RMS, SPL)
 
-from psi.data.plots import (TimeContainer, ChannelPlot, FFTContainer,
-                            FFTChannelPlot, ViewBox)
+from psi.data.plots import (TimeContainer, ChannelPlot, ViewBox)
 
 from psi.data.sinks.api import BinaryStore
 from psi.experiment.api import StatusItem
 from psi.token.primitives import (
-    BandlimitedNoise, BroadbandNoise, Cos2Envelope, ShapedNoise
+    BandlimitedNoise, BandlimitedFIRNoise, BroadbandNoise, Cos2Envelope,
+    ShapedNoise
 )
 
 from psi.paradigms.core.io_mixins import ChannelInput, EpochChannelOutput
@@ -73,6 +72,12 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             ShapedNoise:
                 pass
 
+        Cos2Envelope: bandlimited_fir_noise:
+            name = 'bandlimited_fir_noise_burst'
+            label = 'FIR noise'
+            BandlimitedFIRNoise:
+                pass
+
     Extension:
         id = EXPERIMENT + '.items'
         point = 'psi.context.items'
@@ -89,7 +94,7 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             label = 'Speaker'
             configurable = True
             group_name = 'hardware'
-            token = bandlimited_noise
+            token = bandlimited_fir_noise
 
         ChannelInput:
             name = 'microphone'
