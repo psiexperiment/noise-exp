@@ -3,6 +3,7 @@ log = logging.getLogger(__name__)
 
 import numpy as np
 
+from enaml.application import deferred_call
 from enaml.widgets.api import ProgressBar
 from enaml.workbench.api import Extension
 
@@ -37,7 +38,7 @@ def update_progress(pb, target):
     pb.value = 0
     while True:
         data = (yield)
-        pb.value += data.shape[-1]
+        deferred_call(setattr, pb, 'value', pb.value + data.shape[-1])
         target(data)
 
 
