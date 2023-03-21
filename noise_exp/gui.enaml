@@ -63,3 +63,4 @@ enamldef Main(MainWindow):
                 text = 'Start'
                 clicked ::
                     settings.run_experiment(save=False)
+                    preferences.items = [str(p) for p in list_preferences('noise_exposure')]
