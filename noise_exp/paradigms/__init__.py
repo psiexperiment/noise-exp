@@ -7,6 +7,7 @@ PATH = 'noise_exp.paradigms.'
 
 microphone_mixin = {
     'manifest': CORE_PATH + 'signal_mixins.SignalViewManifest',
+    'required': True,
     'attrs': {
         'id': 'microphone_signal_view',
         'title': 'Microphone view (time)',
@@ -20,6 +21,7 @@ microphone_mixin = {
 
 microphone_fft_mixin = {
     'manifest': CORE_PATH + 'signal_mixins.SignalFFTViewManifest',
+    'required': True,
     'attrs': {
         'id': 'microphone_fft_view',
         'title': 'Microphone view (PSD)',
