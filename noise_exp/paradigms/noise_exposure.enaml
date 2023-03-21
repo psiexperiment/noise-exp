@@ -85,6 +85,7 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
 
         ContextGroup:
             name = 'hardware'
+            label = 'Hardware'
 
     Extension:
         id = EXPERIMENT + '.io'

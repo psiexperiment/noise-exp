@@ -1,9 +1,12 @@
 from pathlib import Path
 import subprocess
 
-from atom.api import Atom, Str
+from atom.api import Atom, Enum, Str
+from enaml.core.api import Looper
+from enaml.layout.api import align, hbox, spacer, vbox
 from enaml.widgets.api import (
-    Container, Field, Form, HGroup, Label, MainWindow, ObjectCombo, PushButton
+    Action, ActionGroup, Container, Field, Label, MainWindow, Menu, MenuBar,
+    ObjectCombo, PushButton
 )
 
 from psi.application import list_preferences
@@ -11,6 +14,7 @@ from psi.application import list_preferences
 
 class Settings(Atom):
 
+    logging_level = Enum('trace', 'debug', 'info', 'warning', 'error')('info')
     cohort = Str()
     experimenter = Str()
     note = Str()
@@ -24,43 +28,67 @@ class Settings(Atom):
             args.extend(['--preference', self.preference])
         if save:
             args.append(str(DATA_ROOT / filename))
-        #args.extend([
-        #    '--preferences', experiment.preference,
-        #    '--debug-level-console', self.logging_level.upper(),
-        #])
-        #for plugin in experiment.plugins:
-        #    args.extend(['--plugin', plugin])
+        args.extend([
+            '--debug-level-console', self.logging_level.upper(),
+        ])
         print(' '.join(args))
         subprocess.check_output(args)
+
 
 enamldef Main(MainWindow):
 
     title = 'Noise Exposure'
+    initial_size = (400, 300)
 
     attr settings = Settings()
 
-    Container:
-        Form:
-            Label:
-                text = 'Cohort'
-            Field:
-                text := settings.cohort
-            Label:
-                text = 'Experimenter'
-            Field:
-                text := settings.experimenter
-            Label:
-                text = 'Note'
-            Field:
-                text := settings.note
+    MenuBar:
+        Menu:
+            title = '&Debug'
+            Menu:
+                title = 'Logging Level'
+                ActionGroup:
+                    Looper:
+                        iterable = settings.get_member('logging_level').items
+                        Action:
+                            checkable = True
+                            text = loop_item
+                            checked ::
+                                settings.logging_level = loop_item
+                            checked << settings.logging_level == loop_item
 
-        HGroup:
-            ObjectCombo: preferences:
-                items = [str(p) for p in list_preferences('noise_exposure')]
-                selected := settings.preference
-                to_string = lambda x: Path(x).stem
-            PushButton: start:
-                text = 'Start'
-                clicked ::
-                    settings.run_experiment(save=False)
-                    preferences.items = [str(p) for p in list_preferences('noise_exposure')]
+    Container:
+        layout_constraints => ():
+            labels = children[:-1:2]
+            fields = children[1:-1:2]
+            start_button = children[-1]
+            h_constraints = [hbox(l, f) for l, f in zip(labels, fields)]
+            return [
+                vbox(*h_constraints, hbox(spacer(0), start_button)),
+                align('right', *labels),
+                align('right', *fields),
+            ]
+
+        Label:
+            text = 'Cohort'
+        Field:
+            text := settings.cohort
+        Label:
+            text = 'Experimenter'
+        Field:
+            text := settings.experimenter
+        Label:
+            text = 'Note'
+        Field:
+            text := settings.note
+        Label:
+            text = 'Settings'
+        ObjectCombo: preferences:
+            items = [str(p) for p in list_preferences('noise_exposure')]
+            selected := settings.preference
+            to_string = lambda x: Path(x).stem
+        PushButton: start:
+            text = 'Start'
+            clicked ::
+                settings.run_experiment(save=False)
+                preferences.items = [str(p) for p in list_preferences('noise_exposure')]
