@@ -1,15 +1,39 @@
 from enaml.workbench.api import Extension, PluginManifest
+from enaml.workbench.core.api import Command
+
 
 from psiaudio.calibration import FlatCalibration
 from psiaudio.util import dbi
+from psi.controller.api import ExperimentAction
 from psi.controller.engines.nidaq import (NIDAQEngine,
                                           NIDAQHardwareAIChannel,
                                           NIDAQHardwareAOChannel)
+
+from cftscal.api import speaker_manager
+
+from .util import connect_trigger
 
 AI_MODE = 'differential'
 
 
 enamldef IOManifest(PluginManifest): manifest:
+
+    Extension:
+        id = 'coati_commands'
+        point = 'enaml.workbench.core.commands'
+
+        Command:
+            id = 'coati.connect_trigger'
+            handler = lambda e: connect_trigger(e.workbench.get_plugin('psi.controller'))
+
+    Extension:
+        id = 'coati_actions'
+        point = 'psi.controller.actions'
+
+        ExperimentAction:
+            event = 'experiment_prepare'
+            command = 'coati.connect_trigger'
+            weight = 90
 
     Extension:
         id = 'backend'
@@ -23,7 +47,7 @@ enamldef IOManifest(PluginManifest): manifest:
             hw_ao_monitor_period = 1
 
             NIDAQHardwareAOChannel:
-                label = 'Array Speaker'
+                label = 'Array'
                 name = 'speaker_array'
                 channel = 'Dev1/ao0'
                 fs = 100e3
@@ -31,12 +55,12 @@ enamldef IOManifest(PluginManifest): manifest:
                 dtype = 'float64'
                 terminal_mode = 'RSE'
                 filter_delay = 0
-
                 calibration_user_editable = False
-                calibration = FlatCalibration.from_db(88, vrms=dbi(-9))
+                #calibration = FlatCalibration.from_db(88, vrms=dbi(-9))
+                calibration = speaker_manager.get_object('array').get_current_calibration().load()
 
             NIDAQHardwareAOChannel:
-                label = 'Horn Speaker'
+                label = 'Horn'
                 name = 'speaker_horn'
                 channel = 'Dev1/ao1'
                 fs = 100e3
@@ -44,9 +68,10 @@ enamldef IOManifest(PluginManifest): manifest:
                 dtype = 'float64'
                 terminal_mode = 'RSE'
                 filter_delay = 0
+                calibration = speaker_manager.get_object('horn').get_current_calibration().load()
 
                 calibration_user_editable = False
-                calibration = FlatCalibration.from_db(88, vrms=dbi(-9))
+                #calibration = FlatCalibration.from_db(88, vrms=dbi(-9))
 
             NIDAQHardwareAIChannel:
                 label = 'Microphone'
@@ -57,6 +82,3 @@ enamldef IOManifest(PluginManifest): manifest:
                 dtype = 'float64'
                 terminal_mode = AI_MODE
                 start_trigger = 'ao/StartTrigger'
-                calibration_user_editable = False
-                calibration = FlatCalibration.from_mv_pa(2.12)
-                gain = 0
