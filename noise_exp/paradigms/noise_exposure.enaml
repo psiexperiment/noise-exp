@@ -1,11 +1,14 @@
 import logging
 log = logging.getLogger(__name__)
 
+import os
+
 import numpy as np
 
 from enaml.application import deferred_call
 from enaml.widgets.api import ProgressBar
 from enaml.workbench.api import Extension
+from enaml.workbench.core.api import Command
 
 from psiaudio.pipeline import coroutine
 from psi.context.api import ContextGroup
@@ -25,6 +28,7 @@ from psi.token.primitives import (
 )
 
 from psi.paradigms.core.io_mixins import ChannelInput, EpochChannelOutput
+from cftscal.api import microphone_manager
 
 EXPERIMENT = __name__.rsplit('.', 1)[-1]
 
@@ -40,6 +44,22 @@ def update_progress(pb, target):
         data = (yield)
         deferred_call(setattr, pb, 'value', pb.value + data.shape[-1])
         target(data)
+
+
+def initialize_settings(event):
+    context = event.workbench.get_plugin('psi.context')
+    controller = event.workbench.get_plugin('psi.controller')
+
+    if (gain := os.environ.get('NOISE_EXP_MICROPHONE_GAIN', None)):
+        item = context.get_item('microphone_input_gain')
+        item.set_value(gain)
+        item.editable = False
+
+    if (microphone := os.environ.get('NOISE_EXP_MICROPHONE', None)):
+        mic_channel = controller.get_channel('hw_ai::microphone')
+        mic_channel.calibration = microphone_manager.from_string(microphone).load()
+
+    speaker = controller.get_channel('hw_ao::speaker_horn')
 
 
 enamldef NoiseControllerManifest(ControllerManifest): manifest:
@@ -133,6 +153,14 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                 text_visible = True
 
     Extension:
+        id = EXPERIMENT + '.commands'
+        point = 'enaml.workbench.core.commands'
+
+        Command:
+            id = manifest.id + '.initialize_settings'
+            handler = initialize_settings
+
+    Extension:
         id = EXPERIMENT + '.actions'
         point = 'psi.controller.actions'
         rank = 100
@@ -159,6 +187,10 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
         ExperimentAction:
             event = 'exposure_end'
             command = 'psi.controller.stop'
+
+        ExperimentAction:
+            event = 'plugins_started'
+            command = manifest.id + '.initialize_settings'
 
     Extension:
         id = EXPERIMENT + '.plots'
