@@ -1,15 +1,22 @@
+import json
+import os
 from pathlib import Path
 import subprocess
 
-from atom.api import Atom, Enum, Str
+from atom.api import Atom, Dict, Enum, Str
 from enaml.core.api import Looper
 from enaml.layout.api import align, hbox, spacer, vbox
 from enaml.widgets.api import (
-    Action, ActionGroup, Container, Field, Label, MainWindow, Menu, MenuBar,
-    ObjectCombo, PushButton
+    Action, ActionGroup, Container, Field, FileDialogEx, Form, HGroup, Label,
+    MainWindow, Menu, MenuBar, ObjectCombo, PushButton
 )
 
+from psi import get_config, get_config_folder
 from psi.application import list_preferences
+
+from cftscal.api import microphone_manager
+
+DATA_ROOT = get_config('DATA_ROOT')
 
 
 class Settings(Atom):
@@ -20,19 +27,58 @@ class Settings(Atom):
     note = Str()
     preference = Str()
 
+    microphone_config = Dict()
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        default_config = get_config_folder() / 'noise-exp' / 'default.json'
+        if default_config.exists():
+            self.load_config(default_config)
+        else:
+            self.load_config()
+
     def run_experiment(self, save=True):
-        filename = f'{{date_time}} {self.experimenter} {self.cohort} {self.note} noise-exposure'
+        env = {}
+        mic_cal_name = microphone_manager \
+            .get_object(self.microphone_config['microphone']) \
+            .get_current_calibration().to_string()
+
+        env = {
+            'NOISE_EXP_MICROPHONE': mic_cal_name,
+            'NOISE_EXP_MICROPHONE_GAIN': str(self.microphone_config['gain']),
+        }
+
+        filename = f'{{date_time}} {self.experimenter} {self.cohort} {self.note} noise_exposure'
         filename = ' '.join(filename.split())
         args = ['psi', 'noise_exposure']
-        if self.preference:
-            args.extend(['--preference', self.preference])
         if save:
             args.append(str(DATA_ROOT / filename))
+        if self.preference:
+            args.extend(['--preference', self.preference])
         args.extend([
             '--debug-level-console', self.logging_level.upper(),
         ])
+        print(env)
         print(' '.join(args))
-        subprocess.check_output(args)
+        subprocess.check_output(args, env=dict(os.environ, **env))
+
+    def save_config(self, filename):
+        info = {
+            'logging_level': self.logging_level,
+            'preference': self.preference,
+            'microphone_config': self.microphone_config,
+        }
+        filename = Path(filename)
+        filename.write_text(json.dumps(info, indent=2))
+
+    def load_config(self, filename=None):
+        if filename is not None:
+            filename = Path(filename)
+            info = json.loads(filename.read_text())
+            for k, v in info.items():
+                setattr(self, k, v)
+        self.microphone_config.setdefault('microphone', None)
+        self.microphone_config.setdefault('gain', 0)
 
 
 enamldef Main(MainWindow):
@@ -43,6 +89,28 @@ enamldef Main(MainWindow):
     attr settings = Settings()
 
     MenuBar:
+        Menu:
+            title = '&File'
+            Action:
+                text = 'Load config\tCtrl+O'
+                triggered ::
+                    path = get_config_folder() / 'noise-exp'
+                    path.mkdir(exist_ok=True)
+                    filename = FileDialogEx.get_open_file_name(
+                        current_path=str(path),
+                        name_filters=['Experiment Settings (*.json)'],
+                    )
+                    settings.load_config(filename)
+            Action:
+                text = 'Save config\tCtrl+O'
+                triggered ::
+                    path = get_config_folder() / 'noise-exp'
+                    path.mkdir(exist_ok=True)
+                    filename = FileDialogEx.get_save_file_name(
+                        current_path=str(path),
+                        name_filters=['Experiment Settings (*.json)'],
+                    )
+                    settings.save_config(filename)
         Menu:
             title = '&Debug'
             Menu:
@@ -59,15 +127,36 @@ enamldef Main(MainWindow):
 
     Container:
         layout_constraints => ():
-            labels = children[:-1:2]
-            fields = children[1:-1:2]
-            start_button = children[-1]
+            labels = children[:-2:2]
+            fields = children[1:-2:2]
+            buttons = children[-2:]
             h_constraints = [hbox(l, f) for l, f in zip(labels, fields)]
-            return [
-                vbox(*h_constraints, hbox(spacer(0), start_button)),
+            constraints = [
+                vbox(*h_constraints, hbox(spacer(0), *buttons)),
                 align('right', *labels),
                 align('right', *fields),
             ]
+            for row in zip(labels, fields):
+                constraints.append(align('v_center', *row))
+            return constraints
+
+        Label:
+            text = 'Microphone'
+        HGroup:
+            padding = 0
+            align_widths = False
+            ObjectCombo:
+                items = sorted(microphone_manager.list_names())
+                selected << settings.microphone_config['microphone']
+                selected ::
+                    settings.microphone_config['microphone'] = selected
+            ObjectCombo:
+                items = [-20, -10, 0, 10, 20, 30, 40, 50]
+                selected << settings.microphone_config['gain']
+                selected ::
+                    settings.microphone_config['gain'] = selected
+            Label:
+                text = 'dB gain'
 
         Label:
             text = 'Cohort'
@@ -87,8 +176,13 @@ enamldef Main(MainWindow):
             items = [str(p) for p in list_preferences('noise_exposure')]
             selected := settings.preference
             to_string = lambda x: Path(x).stem
-        PushButton: start:
-            text = 'Start'
+        PushButton: dry_run:
+            text = 'Dry run (do not save)'
             clicked ::
                 settings.run_experiment(save=False)
+                preferences.items = [str(p) for p in list_preferences('noise_exposure')]
+        PushButton: start:
+            text = 'Start (save)'
+            clicked ::
+                settings.run_experiment(save=True)
                 preferences.items = [str(p) for p in list_preferences('noise_exposure')]
