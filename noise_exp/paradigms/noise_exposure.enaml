@@ -177,7 +177,7 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
         ExperimentAction:
             event = 'experiment_start'
             command = 'exposure.start'
-            kwargs = {'start': 10}
+            kwargs = {'start': 1}
 
         ExperimentCallback:
             event = 'exposure_start'
