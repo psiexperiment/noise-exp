@@ -56,7 +56,7 @@ def initialize_settings(event):
         item.editable = False
 
     if (microphone := os.environ.get('NOISE_EXP_MICROPHONE', None)):
-        mic_channel = controller.get_channel('hw_ai::microphone')
+        mic_channel = controller.get_channel('hw_ai::microphone_monitor')
         mic_channel.calibration = microphone_manager.from_string(microphone).load()
 
     speaker = controller.get_channel('hw_ao::speaker_horn')
