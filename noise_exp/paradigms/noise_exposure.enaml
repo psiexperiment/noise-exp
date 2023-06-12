@@ -69,7 +69,7 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
         point = 'psi.data.sinks'
 
         BinaryStore:
-            continuous_inputs = ['microphone', 'noise_level']
+            continuous_inputs = ['monitor_microphone', 'noise_level']
 
     Extension:
         id = EXPERIMENT + '.tokens'
@@ -104,7 +104,7 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
         point = 'psi.context.items'
 
         ContextGroup:
-            name = 'hardware'
+            name = 'hardware_settings'
             label = 'Hardware'
 
     Extension:
@@ -115,31 +115,29 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             name = 'exposure'
             label = 'Exposure'
             configurable = True
-            group_name = 'hardware'
+            group_name = 'hardware_settings'
             token = bandlimited_fir_noise
 
-        ChannelInput:
-            name = 'microphone'
-            label = 'Microphone'
-            group_name = 'hardware'
+        IIRFilter:
+            source_name = 'monitor_microphone'
+            btype = 'highpass'
+            ftype = 'butter'
+            N = 2
+            f_highpass = 100
+            name = 'microphone_filtered'
 
-            IIRFilter:
-                btype = 'highpass'
-                ftype = 'butter'
-                N = 2
-                f_highpass = 100
-                name = 'microphone_filtered'
+            RMS:
+                source_name = 'monitor_microphone'
+                name = 'RMS'
+                duration = 1
+                SPL: spl:
+                    name = 'noise_level'
 
-                RMS:
-                    name = 'RMS'
-                    duration = 1
-                    SPL: spl:
-                        name = 'noise_level'
-
-            Coroutine:
-                name = 'update_progress'
-                args = (pb_experiment,)
-                coroutine = update_progress
+        Coroutine:
+            source_name = 'monitor_microphone'
+            name = 'update_progress'
+            args = (pb_experiment,)
+            coroutine = update_progress
 
     Extension:
         id = EXPERIMENT + '.workspace'

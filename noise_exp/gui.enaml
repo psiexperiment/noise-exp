@@ -39,13 +39,14 @@ class Settings(Atom):
 
     def run_experiment(self, save=True):
         env = {}
-        mic_cal_name = microphone_manager \
+        mic_cal_ref = microphone_manager \
             .get_object(self.microphone_config['microphone']) \
             .get_current_calibration().to_string()
 
         env = {
-            'NOISE_EXP_MICROPHONE': mic_cal_name,
-            'NOISE_EXP_MICROPHONE_GAIN': str(self.microphone_config['gain']),
+            'CFTS_MICROPHONE': 'monitor',
+            'CFTS_MICROPHONE_MONITOR_GAIN': str(self.microphone_config['gain']),
+            'CFTS_MICROPHONE_MONITOR': mic_cal_ref,
         }
 
         filename = f'{{date_time}} {self.experimenter} {self.cohort} {self.note} noise_exposure'
