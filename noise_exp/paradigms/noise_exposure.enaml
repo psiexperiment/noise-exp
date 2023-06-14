@@ -127,7 +127,6 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             name = 'microphone_filtered'
 
             RMS:
-                source_name = 'monitor_microphone'
                 name = 'RMS'
                 duration = 1
                 SPL: spl:
