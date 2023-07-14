@@ -69,11 +69,10 @@ enamldef IOManifest(PluginManifest): manifest:
                 terminal_mode = 'RSE'
                 filter_delay = 0
                 calibration = speaker_manager.get_object('horn').get_current_calibration().load()
-
                 calibration_user_editable = False
 
             NIDAQHardwareAIChannel:
-                label = 'Microphone'
+                label = 'Monitor'
                 name = 'microphone_monitor'
                 channel = 'Dev1/ai0'
                 fs = 100e3
