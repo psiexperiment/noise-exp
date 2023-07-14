@@ -11,8 +11,8 @@ maintainers = [
     {name = "Brad Buran", email="buran@ohsu.edu"},
 ]
 dependencies = [
-    "psiaudio",
-    "psiexperiment",
+    "psiaudio >= 0.2.3",
+    "psiexperiment >= 0.4.1",
 ]
 dynamic = ["version"]
 
