@@ -14,7 +14,7 @@ from enaml.widgets.api import (
 from psi import get_config, get_config_folder
 from psi.application import list_preferences
 
-from cftscal.api import microphone_manager
+from cftscal.api import list_microphone_connections, microphone_manager
 
 DATA_ROOT = get_config('DATA_ROOT')
 
@@ -43,10 +43,11 @@ class Settings(Atom):
             .get_object(self.microphone_config['microphone']) \
             .get_current_calibration().to_string()
 
+        input_name = self.microphone_config['name']
         env = {
-            'CFTS_MICROPHONE': 'monitor',
-            'CFTS_MICROPHONE_MONITOR_GAIN': str(self.microphone_config['gain']),
-            'CFTS_MICROPHONE_MONITOR': mic_cal_ref,
+            'CFTS_MICROPHONE': input_name,
+            f'CFTS_MICROPHONE_{input_name.upper()}_GAIN': str(self.microphone_config['gain']),
+            f'CFTS_MICROPHONE_{input_name.upper()}': mic_cal_ref,
         }
 
         filename = f'{{date_time}} {self.experimenter} {self.cohort} {self.note} noise_exposure'
@@ -80,6 +81,8 @@ class Settings(Atom):
                 setattr(self, k, v)
         self.microphone_config.setdefault('microphone', None)
         self.microphone_config.setdefault('gain', 0)
+        mic_input_name = list(list_microphone_connections().values())[0]
+        self.microphone_config.setdefault('name', mic_input_name)
 
 
 enamldef Main(MainWindow):
@@ -143,9 +146,18 @@ enamldef Main(MainWindow):
 
         Label:
             text = 'Microphone'
+
         HGroup:
             padding = 0
             align_widths = False
+            ObjectCombo:
+                attr connections = list_microphone_connections()
+                attr connections_rev = {v: k for k, v in connections.items()}
+                items = list(connections.values())
+                selected ::
+                    settings.microphone_config['name'] = selected[1]
+                selected << settings.microphone_config['name']
+                to_string = lambda x: connections_rev[x]
             ObjectCombo:
                 items = sorted(microphone_manager.list_names())
                 selected << settings.microphone_config['microphone']
