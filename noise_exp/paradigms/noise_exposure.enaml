@@ -6,7 +6,7 @@ import os
 import numpy as np
 
 from enaml.application import deferred_call
-from enaml.widgets.api import ProgressBar
+from enaml.widgets.api import Label, ProgressBar
 from enaml.workbench.api import Extension
 from enaml.workbench.core.api import Command
 
@@ -16,7 +16,7 @@ from psi.controller.api import (
     ControllerManifest, ExperimentAction, ExperimentCallback
 )
 
-from psi.controller.input import (Coroutine, IIRFilter, RMS, SPL)
+from psi.controller.input import (Callback, Coroutine, IIRFilter, RMS, SPL)
 
 from psi.data.plots import (TimeContainer, ChannelPlot, ViewBox)
 
@@ -47,6 +47,9 @@ def update_progress(pb, target):
 
 
 def initialize_settings(event):
+    '''
+    Configure microphone based on environment variables if provided
+    '''
     context = event.workbench.get_plugin('psi.context')
     controller = event.workbench.get_plugin('psi.controller')
 
@@ -59,7 +62,28 @@ def initialize_settings(event):
         mic_channel = controller.get_channel('hw_ai::microphone_monitor')
         mic_channel.calibration = microphone_manager.from_string(microphone).load()
 
-    speaker = controller.get_channel('hw_ao::speaker_horn')
+
+@coroutine
+def running_rms(target):
+    # Stores running sum of squares
+    n_discard = 10
+    running_sum = 0
+    running_n = 0
+    while True:
+        data = (yield)
+        log.info(data.n_time)
+        if n_discard > 0:
+            discard = data[..., :n_discard]
+            n_discard -= discard.n_time
+            data = data[..., n_discard:]
+        if data.n_time == 0:
+            continue
+        log.info(n_discard)
+        log.info(data)
+        running_sum += (data**2).sum(axis=-1)
+        running_n += data.n_time
+        running_rms = np.sqrt(running_sum / running_n)
+        target(running_rms)
 
 
 enamldef NoiseControllerManifest(ControllerManifest): manifest:
@@ -132,6 +156,12 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                 SPL: spl:
                     name = 'noise_level'
 
+                Coroutine:
+                    coroutine = running_rms
+                    SPL:
+                        Callback:
+                            function = lambda x: setattr(average_level, 'text', f'{x[-1]:.1f} dB SPL')
+
         Coroutine:
             source_name = 'monitor_microphone'
             name = 'update_progress'
@@ -148,6 +178,12 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             ProgressBar: pb_experiment:
                 name = 'noise_progress'
                 text_visible = True
+
+        StatusItem:
+            label = 'Average level (dB SPL)'
+
+            Label: average_level:
+                text = ''
 
     Extension:
         id = EXPERIMENT + '.commands'
