@@ -14,7 +14,6 @@ def main():
     load_paradigm_descriptions()
     app = QtApplication()
     view = Main()
-    #view.settings.load_config(args.config)
     view.show()
     app.start()
     return True

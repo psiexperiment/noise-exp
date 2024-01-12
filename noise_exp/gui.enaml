@@ -96,25 +96,11 @@ enamldef Main(MainWindow):
         Menu:
             title = '&File'
             Action:
-                text = 'Load config\tCtrl+O'
+                text = 'Set Defaults\tCtrl+D'
                 triggered ::
                     path = get_config_folder() / 'noise-exp'
                     path.mkdir(exist_ok=True)
-                    filename = FileDialogEx.get_open_file_name(
-                        current_path=str(path),
-                        name_filters=['Experiment Settings (*.json)'],
-                    )
-                    settings.load_config(filename)
-            Action:
-                text = 'Save config\tCtrl+O'
-                triggered ::
-                    path = get_config_folder() / 'noise-exp'
-                    path.mkdir(exist_ok=True)
-                    filename = FileDialogEx.get_save_file_name(
-                        current_path=str(path),
-                        name_filters=['Experiment Settings (*.json)'],
-                    )
-                    settings.save_config(filename)
+                    settings.save_config(path / 'default.json')
         Menu:
             title = '&Debug'
             Menu:
