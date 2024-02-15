@@ -14,13 +14,13 @@ microphone_mixin = {
         'time_span': 10,
         'time_delay': 0,
         'source_name': 'microphone_filtered',
-        'y_label': 'Microphone (dB)'
+        'y_label': 'Microphone (V)'
     },
 }
 
 
 microphone_fft_mixin = {
-    'manifest': CORE_PATH + 'signal_mixins.SignalFFTViewManifest',
+    'manifest': CORE_PATH + 'signal_mixins.MultiSignalFFTViewManifest',
     'required': True,
     'attrs': {
         'id': 'microphone_fft_view',
@@ -29,8 +29,16 @@ microphone_fft_mixin = {
         'waveform_averages': 10,
         'fft_freq_lb': 500,
         'fft_freq_ub': 64000,
-        'source_name': 'microphone_filtered',
-        'y_label': 'Microphone (dB)'
+        'y_label': 'Microphone (dB)',
+        'sources': {
+            'microphone_filtered': {
+                'apply_calibration': True,
+            },
+            'microphone_band_filtered': {
+                'apply_calibration': True,
+                'color': 'seagreen',
+            },
+        }
     }
 }
 

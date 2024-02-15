@@ -1,6 +1,7 @@
 import logging
 log = logging.getLogger(__name__)
 
+from functools import partial
 import os
 
 import numpy as np
@@ -31,6 +32,7 @@ from psi.paradigms.core.io_mixins import ChannelInput, EpochChannelOutput
 from cftscal.api import microphone_manager
 
 EXPERIMENT = __name__.rsplit('.', 1)[-1]
+EXPOSURE_START_DELAY = 1
 
 
 def configure_experiment(pb, fs, t0_end, **kwargs):
@@ -64,26 +66,24 @@ def initialize_settings(event):
 
 
 @coroutine
-def running_rms(target):
+def running_rms(discard, target):
     # Stores running sum of squares
-    n_discard = 10
     running_sum = 0
     running_n = 0
+    n_discard = None
+    data = (yield)
+    n_discard = int(np.ceil(discard * data.fs))
     while True:
-        data = (yield)
-        log.info(data.n_time)
         if n_discard > 0:
             discard = data[..., :n_discard]
             n_discard -= discard.n_time
             data = data[..., n_discard:]
-        if data.n_time == 0:
-            continue
-        log.info(n_discard)
-        log.info(data)
-        running_sum += (data**2).sum(axis=-1)
-        running_n += data.n_time
-        running_rms = np.sqrt(running_sum / running_n)
-        target(running_rms)
+        if data.n_time != 0:
+            running_sum += (data**2).sum(axis=-1)
+            running_n += data.n_time
+            running_rms = np.sqrt(running_sum / running_n)
+            target(running_rms)
+        data = (yield)
 
 
 enamldef NoiseControllerManifest(ControllerManifest): manifest:
@@ -120,8 +120,14 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
         Cos2Envelope: bandlimited_fir_noise:
             name = 'bandlimited_fir_noise_burst'
             label = 'FIR noise'
+            values = {
+                'start_time': 0,
+            }
             BandlimitedFIRNoise:
-                pass
+                values = {
+                    'polarity': 1,
+                    'audiogram_weighting': None,
+                }
 
     Extension:
         id = EXPERIMENT + '.items'
@@ -150,6 +156,29 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             f_highpass = 100
             name = 'microphone_filtered'
 
+            IIRFilter:
+                name = 'microphone_band_filtered'
+                btype = 'bandpass'
+                ftype = 'butter'
+                f_lowpass = C.exposure_bandlimited_noise_fh / .95
+                f_highpass = C.exposure_bandlimited_noise_fl * .95
+                N = 4
+
+                RMS:
+                    name = 'Band RMS'
+                    duration = 1
+                    SPL: spl:
+                        name = 'band_noise_level'
+
+                Coroutine:
+                    coroutine = partial(running_rms, \
+                                        EXPOSURE_START_DELAY + \
+                                        C.exposure_bandlimited_fir_noise_burst_rise_time)
+
+                    SPL:
+                        Callback:
+                            function = lambda x: setattr(average_band_level, 'text', f'{x[-1]:.1f} dB SPL')
+
             RMS:
                 name = 'RMS'
                 duration = 1
@@ -157,7 +186,10 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                     name = 'noise_level'
 
                 Coroutine:
-                    coroutine = running_rms
+                    coroutine = partial(running_rms, \
+                                        EXPOSURE_START_DELAY + \
+                                        C.exposure_bandlimited_fir_noise_burst_rise_time)
+
                     SPL:
                         Callback:
                             function = lambda x: setattr(average_level, 'text', f'{x[-1]:.1f} dB SPL')
@@ -180,9 +212,15 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                 text_visible = True
 
         StatusItem:
-            label = 'Average level (dB SPL)'
+            label = 'Average overall level (dB SPL)'
 
             Label: average_level:
+                text = ''
+
+        StatusItem:
+            label = 'Average level in band (dB SPL)'
+
+            Label: average_band_level:
                 text = ''
 
     Extension:
@@ -210,7 +248,7 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
         ExperimentAction:
             event = 'experiment_start'
             command = 'exposure.start'
-            kwargs = {'start': 1}
+            kwargs = {'start': EXPOSURE_START_DELAY}
 
         ExperimentCallback:
             event = 'exposure_start'
