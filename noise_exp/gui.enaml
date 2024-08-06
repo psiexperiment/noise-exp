@@ -16,7 +16,7 @@ from psi.application import list_preferences
 
 from cftscal.api import list_microphone_connections, microphone_manager
 
-DATA_ROOT = get_config('DATA_ROOT')
+DATA_ROOT = Path(get_config('DATA_ROOT'))
 
 
 class Settings(Atom):
