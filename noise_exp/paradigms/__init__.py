@@ -50,11 +50,19 @@ selectable_microphone_mixin = {
 }
 
 
+selectable_speaker_mixin = {
+    'manifest': 'cftscal.paradigms.objects.Speaker',
+    'required': True,
+    'attrs': {'id': 'speaker', 'title': 'Speaker'},
+}
+
+
 ParadigmDescription(
     'noise_exposure', 'Noise exposure', 'cohort', [
         {'manifest': PATH + 'noise_exposure.NoiseControllerManifest'},
         microphone_mixin,
         microphone_fft_mixin,
         selectable_microphone_mixin,
+        selectable_speaker_mixin,
     ],
 )

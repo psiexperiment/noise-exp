@@ -28,7 +28,7 @@ from psi.token.primitives import (
     ShapedNoise
 )
 
-from psi.paradigms.core.io_mixins import ChannelInput, EpochChannelOutput
+from psi.paradigms.core.io_mixins import ChannelInput, EpochOutput
 from cftscal.api import microphone_manager
 
 EXPERIMENT = __name__.rsplit('.', 1)[-1]
@@ -46,23 +46,6 @@ def update_progress(pb, target):
         data = (yield)
         deferred_call(setattr, pb, 'value', pb.value + data.shape[-1])
         target(data)
-
-
-def initialize_settings(event):
-    '''
-    Configure microphone based on environment variables if provided
-    '''
-    context = event.workbench.get_plugin('psi.context')
-    controller = event.workbench.get_plugin('psi.controller')
-
-    if (gain := os.environ.get('NOISE_EXP_MICROPHONE_GAIN', None)):
-        item = context.get_item('microphone_input_gain')
-        item.set_value(gain)
-        item.editable = False
-
-    if (microphone := os.environ.get('NOISE_EXP_MICROPHONE', None)):
-        mic_channel = controller.get_channel('hw_ai::microphone_monitor')
-        mic_channel.calibration = microphone_manager.from_string(microphone).load()
 
 
 @coroutine
@@ -141,11 +124,10 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
         id = EXPERIMENT + '.io'
         point = 'psi.controller.io'
 
-        EpochChannelOutput: output:
+        EpochOutput: output:
             name = 'exposure'
             label = 'Exposure'
-            configurable = True
-            group_name = 'hardware_settings'
+            target_name = 'speaker_output'
             token = bandlimited_fir_noise
 
         IIRFilter:
@@ -224,14 +206,6 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                 text = ''
 
     Extension:
-        id = EXPERIMENT + '.commands'
-        point = 'enaml.workbench.core.commands'
-
-        Command:
-            id = manifest.id + '.initialize_settings'
-            handler = initialize_settings
-
-    Extension:
         id = EXPERIMENT + '.actions'
         point = 'psi.controller.actions'
         rank = 100
@@ -258,10 +232,6 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
         ExperimentAction:
             event = 'exposure_end'
             command = 'psi.controller.stop'
-
-        ExperimentAction:
-            event = 'plugins_started'
-            command = manifest.id + '.initialize_settings'
 
     Extension:
         id = EXPERIMENT + '.plots'

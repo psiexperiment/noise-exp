@@ -14,7 +14,10 @@ from enaml.widgets.api import (
 from psi import get_config, get_config_folder
 from psi.application import list_preferences
 
-from cftscal.api import list_microphone_connections, microphone_manager
+from cftscal.api import (
+    list_microphone_connections, list_speaker_connections, microphone_manager,
+    speaker_manager
+)
 
 DATA_ROOT = Path(get_config('DATA_ROOT'))
 
@@ -28,6 +31,7 @@ class Settings(Atom):
     preference = Str()
 
     microphone_config = Dict()
+    speaker_config = Dict()
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
@@ -38,16 +42,24 @@ class Settings(Atom):
             self.load_config()
 
     def run_experiment(self, save=True):
-        env = {}
+        input_name = self.microphone_config['name']
+        input_device = self.microphone_config['microphone']
         mic_cal_ref = microphone_manager \
-            .get_object(self.microphone_config['microphone']) \
+            .get_object(input_device) \
             .get_current_calibration().to_string()
 
-        input_name = self.microphone_config['name']
+        output_name = self.speaker_config['name']
+        output_device = self.speaker_config['speaker']
+        speaker_cal_ref = speaker_manager \
+            .get_object(output_device) \
+            .get_current_calibration().to_string()
+
         env = {
             'CFTS_MICROPHONE': input_name,
             f'CFTS_MICROPHONE_{input_name.upper()}_GAIN': str(self.microphone_config['gain']),
             f'CFTS_MICROPHONE_{input_name.upper()}': mic_cal_ref,
+            'CFTS_SPEAKER': output_name,
+            f'CFTS_SPEAKER_{output_name.upper()}': speaker_cal_ref,
         }
 
         filename = f'{{date_time}} {self.experimenter} {self.cohort} {self.note} noise_exposure'
@@ -69,6 +81,7 @@ class Settings(Atom):
             'logging_level': self.logging_level,
             'preference': self.preference,
             'microphone_config': self.microphone_config,
+            'speaker_config': self.speaker_config,
         }
         filename = Path(filename)
         filename.write_text(json.dumps(info, indent=2))
@@ -79,10 +92,17 @@ class Settings(Atom):
             info = json.loads(filename.read_text())
             for k, v in info.items():
                 setattr(self, k, v)
+
+        # Set reasonable defaults for microphone config
         self.microphone_config.setdefault('microphone', None)
         self.microphone_config.setdefault('gain', 0)
         mic_input_name = list(list_microphone_connections().values())[0]
         self.microphone_config.setdefault('name', mic_input_name)
+
+        # Set reasonable defaults for speaker config
+        self.speaker_config.setdefault('speaker', None)
+        speaker_input_name = list(list_speaker_connections().values())[0]
+        self.speaker_config.setdefault('name', speaker_input_name)
 
 
 enamldef Main(MainWindow):
@@ -117,25 +137,55 @@ enamldef Main(MainWindow):
 
     Container:
         layout_constraints => ():
+            # Pull out alternating label/field entries
             labels = children[:-2:2]
             fields = children[1:-2:2]
+
+            # Pull out buttons which are the last two children
             buttons = children[-2:]
+
+            # Ensure each field is aligned with the label
             h_constraints = [hbox(l, f) for l, f in zip(labels, fields)]
+
             constraints = [
+                # Stack the fields above the buttons, make the buttons appear
+                # on the right hand side at the bottom.
                 vbox(*h_constraints, hbox(spacer(0), *buttons)),
+
+                # Ensure widths of labels and fields match
                 align('right', *labels),
-                align('right', *fields),
             ]
             for row in zip(labels, fields):
                 constraints.append(align('v_center', *row))
+
+            # Ensure mic/speaker fields are aligned
+            constraints.extend([
+                label_group.children[0].right == mic_group.children[0].right,
+                label_group.children[1].right == mic_group.children[1].right,
+                mic_group.children[0].right == speaker_group.children[0].right,
+                mic_group.children[1].right == speaker_group.children[1].right,
+            ])
             return constraints
+
+        Label:
+            text = ''
+
+        HGroup: label_group:
+            padding = 0
+            align_widths = False
+            share_layout = True
+            Label:
+                text = 'Connection'
+            Label:
+                text = 'Device'
 
         Label:
             text = 'Microphone'
 
-        HGroup:
+        HGroup: mic_group:
             padding = 0
             align_widths = False
+            share_layout = True
             ObjectCombo:
                 attr connections = list_microphone_connections()
                 attr connections_rev = {v: k for k, v in connections.items()}
@@ -156,6 +206,27 @@ enamldef Main(MainWindow):
                     settings.microphone_config['gain'] = selected
             Label:
                 text = 'dB gain'
+
+        Label:
+            text = 'Speaker'
+
+        HGroup: speaker_group:
+            padding = 0
+            align_widths = False
+            share_layout = True
+            ObjectCombo:
+                attr connections = list_speaker_connections()
+                attr connections_rev = {v: k for k, v in connections.items()}
+                items = list(connections.values())
+                selected ::
+                    settings.speaker_config['name'] = selected
+                selected << settings.speaker_config['name']
+                to_string = lambda x: connections_rev[x]
+            ObjectCombo:
+                items = sorted(speaker_manager.list_names())
+                selected << settings.speaker_config['speaker']
+                selected ::
+                    settings.speaker_config['speaker'] = selected
 
         Label:
             text = 'Cohort'
