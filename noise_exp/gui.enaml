@@ -15,8 +15,8 @@ from psi import get_config, get_config_folder
 from psi.application import list_preferences
 
 from cftscal.api import (
-    list_microphone_connections, list_speaker_connections, microphone_manager,
-    speaker_manager
+    list_microphone_connections, list_speaker_connections,
+    measurement_microphone_manager, speaker_manager
 )
 
 DATA_ROOT = Path(get_config('DATA_ROOT'))
@@ -44,7 +44,7 @@ class Settings(Atom):
     def run_experiment(self, save=True):
         input_name = self.microphone_config['name']
         input_device = self.microphone_config['microphone']
-        mic_cal_ref = microphone_manager \
+        mic_cal_ref = measurement_microphone_manager \
             .get_object(input_device) \
             .get_current_calibration().to_string()
 
@@ -64,7 +64,7 @@ class Settings(Atom):
 
         filename = f'{{date_time}} {self.experimenter} {self.cohort} {self.note} noise_exposure'
         filename = ' '.join(filename.split())
-        args = ['psi', 'noise_exposure']
+        args = ['psi', 'noise_exp.paradigms.noise_exposure']
         if save:
             args.append(str(DATA_ROOT / filename))
         if self.preference:
@@ -191,11 +191,11 @@ enamldef Main(MainWindow):
                 attr connections_rev = {v: k for k, v in connections.items()}
                 items = list(connections.values())
                 selected ::
-                    settings.microphone_config['name'] = selected[1]
+                    settings.microphone_config['name'] = selected
                 selected << settings.microphone_config['name']
                 to_string = lambda x: connections_rev[x]
             ObjectCombo:
-                items = sorted(microphone_manager.list_names())
+                items = sorted(measurement_microphone_manager.list_names())
                 selected << settings.microphone_config['microphone']
                 selected ::
                     settings.microphone_config['microphone'] = selected

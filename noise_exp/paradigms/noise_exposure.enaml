@@ -29,7 +29,6 @@ from psi.token.primitives import (
 )
 
 from psi.paradigms.core.io_mixins import ChannelInput, EpochOutput
-from cftscal.api import microphone_manager
 
 EXPERIMENT = __name__.rsplit('.', 1)[-1]
 EXPOSURE_START_DELAY = 1

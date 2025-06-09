@@ -46,14 +46,14 @@ microphone_fft_mixin = {
 selectable_microphone_mixin = {
     'manifest': 'cftscal.paradigms.objects.Microphone',
     'required': True,
-    'attrs': {'id': 'monitor', 'title': 'Microphone'},
+    'attrs': {'id': 'monitor_microphone', 'title': 'Microphone'},
 }
 
 
 selectable_speaker_mixin = {
     'manifest': 'cftscal.paradigms.objects.Speaker',
     'required': True,
-    'attrs': {'id': 'speaker', 'title': 'Speaker'},
+    'attrs': {'id': 'speaker_output', 'title': 'Speaker'},
 }
 
 
