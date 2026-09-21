@@ -15,8 +15,20 @@ For TDT hardware, only the RZ6 is currently supported. Fortunately, the RZ6 is a
 
 Install your preferred Python distribution. For use with National Instruments hardware:
 
-    pip install cfts[ni]
+    pip install noise-exp[ni]
 
 For use with TDT hardware:
 
-    pip install cfts[tdt]
+    pip install noise-exp[tdt]
+
+For use with a sound card:
+
+    pip install noise-exp[soundcard]
+
+## Configuring
+
+The cohort is entered by clicking the cohort button in the launcher, which
+opens one field per slot in the exposure cage. Six slots are offered by
+default. If your cage holds a different number of animals, set:
+
+    NOISE_EXP_MAX_ANIMALS=4

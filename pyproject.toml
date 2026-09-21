@@ -2,7 +2,7 @@
 name = "noise-exp"
 description = "Noise exposure using psiexperiment"
 readme = "readme.md"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 license = {file = "LICENSE.txt"}
 authors = [
     {name = "Brad Buran", email="buran@ohsu.edu"},
@@ -11,14 +11,20 @@ maintainers = [
     {name = "Brad Buran", email="buran@ohsu.edu"},
 ]
 dependencies = [
-    "psiaudio >= 0.2.3",
-    "psiexperiment >= 0.4.1",
+    "psiaudio >= 0.4.4",
+    # 0.7.0 is the refactored psiexperiment (see its MIGRATION.md).
+    "psiexperiment >= 0.7.0",
+    # The launcher and the paradigm both build on cftscal: the launcher
+    # picks the microphone/speaker calibrations, and the paradigm loads
+    # them via `cftscal.paradigms.objects`.
+    "cftscal",
 ]
 dynamic = ["version"]
 
 [project.optional-dependencies]
 ni = ["pydaqmx"]
-tdt = ["tdtpy >=0.9.0"]
+tdt = ["tdtpy >=0.10.4"]
+soundcard = ["sounddevice", "rtmixer"]
 docs = ["sphinx", "sphinx_rtd_theme", "pygments-enaml"]
 test = ["pytest", "pytest-console-scripts", "matplotlib"] # Matplotlib is used in some of the validation scripts.
 zarr-backend = ["zarr"]
@@ -26,6 +32,9 @@ dev = ["coloredlogs"]
 
 [project.scripts]
 noise-exp = "noise_exp.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["setuptools>=61.2", "wheel", "setuptools_scm[toml]>=3.4.3"]

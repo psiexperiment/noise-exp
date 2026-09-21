@@ -2,33 +2,27 @@ import logging
 log = logging.getLogger(__name__)
 
 from functools import partial
-import os
 
 import numpy as np
 
 from enaml.application import deferred_call
 from enaml.widgets.api import Label, ProgressBar
 from enaml.workbench.api import Extension
-from enaml.workbench.core.api import Command
 
 from psiaudio.pipeline import coroutine
+
 from psi.context.api import ContextGroup
 from psi.controller.api import (
-    ControllerManifest, ExperimentAction, ExperimentCallback
+    Callback, ControllerManifest, Coroutine, EpochOutput, ExperimentAction,
+    ExperimentCallback, IIRFilter, RMS, SPL
 )
-
-from psi.controller.input import (Callback, Coroutine, IIRFilter, RMS, SPL)
-
-from psi.data.plots import (TimeContainer, ChannelPlot, ViewBox)
-
+from psi.core.api import StatusItem
+from psi.data.api import ChannelPlot, TimeContainer, ViewBox
 from psi.data.sinks.api import BinaryStore
-from psi.experiment.api import StatusItem
 from psi.token.primitives import (
     BandlimitedNoise, BandlimitedFIRNoise, BroadbandNoise, Cos2Envelope,
     ShapedNoise
 )
-
-from psi.paradigms.core.io_mixins import ChannelInput, EpochOutput
 
 EXPERIMENT = __name__.rsplit('.', 1)[-1]
 EXPOSURE_START_DELAY = 1
@@ -36,6 +30,17 @@ EXPOSURE_START_DELAY = 1
 
 def configure_experiment(pb, fs, t0_end, **kwargs):
     pb.maximum = int(round(t0_end * fs))
+
+
+def update_label(label, x):
+    '''
+    Show the running level in one of the status labels.
+
+    The inputs that feed this run on the acquisition thread, but Qt widgets
+    may only be touched from the GUI thread, so the update is marshalled
+    across rather than applied in place.
+    '''
+    deferred_call(setattr, label, 'text', f'{x[-1]:.1f} dB SPL')
 
 
 @coroutine
@@ -148,7 +153,7 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                 RMS:
                     name = 'Band RMS'
                     duration = 1
-                    SPL: spl:
+                    SPL:
                         name = 'band_noise_level'
 
                 Coroutine:
@@ -158,12 +163,12 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
 
                     SPL:
                         Callback:
-                            function = lambda x: setattr(average_band_level, 'text', f'{x[-1]:.1f} dB SPL')
+                            function = partial(update_label, average_band_level)
 
             RMS:
                 name = 'RMS'
                 duration = 1
-                SPL: spl:
+                SPL:
                     name = 'noise_level'
 
                 Coroutine:
@@ -173,7 +178,7 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
 
                     SPL:
                         Callback:
-                            function = lambda x: setattr(average_level, 'text', f'{x[-1]:.1f} dB SPL')
+                            function = partial(update_label, average_level)
 
         Coroutine:
             source_name = 'monitor_microphone'

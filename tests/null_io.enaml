@@ -1,0 +1,39 @@
+'''
+Minimal IO manifest for the tests.
+
+Backed by `NullEngine`, so no hardware (and no sound card) is needed. The
+two channels declare the `supported_devices` that cftscal's `Microphone`
+and `Speaker` manifests scan for, which is how they end up in the
+launcher's drop-downs and in the paradigm's context items.
+'''
+from enaml.workbench.api import PluginManifest, Extension
+
+from psi.controller.api import HardwareAIChannel, HardwareAOChannel
+from psi.controller.engines.null import NullEngine
+
+
+enamldef NullIOManifest(PluginManifest): manifest:
+
+    id = 'null_io'
+
+    Extension:
+        id = 'null_io.io'
+        point = 'psi.controller.io'
+
+        NullEngine:
+            name = 'null'
+
+            HardwareAIChannel:
+                name = 'mic_a'
+                label = 'Microphone A'
+                fs = 100e3
+                dtype = 'float64'
+                supported_devices = ['measurement_microphone']
+                gain = 0
+
+            HardwareAOChannel:
+                name = 'speaker_a'
+                label = 'Speaker A'
+                fs = 100e3
+                dtype = 'float64'
+                supported_devices = ['speaker']

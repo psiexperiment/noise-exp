@@ -43,17 +43,32 @@ microphone_fft_mixin = {
 }
 
 
+# The microphone and speaker are both configured from environment
+# variables set by the launcher in `noise_exp/gui.enaml`. Both objects
+# require all of their settings (name, gain and calibration for the
+# microphone; name and calibration for the speaker), which is the
+# default `required_vars`, so neither needs an override here -- the
+# exposure level cannot be verified without a calibrated microphone and
+# cannot be delivered accurately without a calibrated speaker.
+
 selectable_microphone_mixin = {
     'manifest': 'cftscal.paradigms.objects.Microphone',
     'required': True,
-    'attrs': {'id': 'monitor_microphone', 'title': 'Microphone'},
+    'attrs': {
+        'id': 'monitor_microphone',
+        'title': 'Microphone',
+        'microphone_type': 'measurement_microphone',
+    },
 }
 
 
+# `cftscal.paradigms.objects.Output` (which `Speaker` subclasses) names
+# the output it contributes `{id}_output`, so the id here is 'speaker'
+# and `noise_exposure.enaml` targets 'speaker_output'.
 selectable_speaker_mixin = {
     'manifest': 'cftscal.paradigms.objects.Speaker',
     'required': True,
-    'attrs': {'id': 'speaker_output', 'title': 'Speaker'},
+    'attrs': {'id': 'speaker', 'title': 'Speaker'},
 }
 
 

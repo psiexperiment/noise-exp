@@ -3,35 +3,108 @@ import os
 from pathlib import Path
 import subprocess
 
-from atom.api import Atom, Dict, Enum, Str
+from atom.api import Atom, ContainerList, Dict, Enum, Str
 from enaml.core.api import Looper
 from enaml.layout.api import align, hbox, spacer, vbox
 from enaml.widgets.api import (
-    Action, ActionGroup, Container, Field, FileDialogEx, Form, HGroup, Label,
-    MainWindow, Menu, MenuBar, ObjectCombo, PushButton
+    Action, ActionGroup, Container, Dialog, Field, HGroup, Label, MainWindow,
+    Menu, MenuBar, ObjectCombo, PushButton
 )
 
 from psi import get_config, get_config_folder
 from psi.application import list_preferences
 
 from cftscal.api import (
-    list_microphone_connections, list_speaker_connections,
+    list_measurement_microphone_connections, list_speaker_connections,
     measurement_microphone_manager, speaker_manager
 )
 
 DATA_ROOT = Path(get_config('DATA_ROOT'))
 
+#: Number of animals that can be exposed at once when NOISE_EXP_MAX_ANIMALS
+#: is not set. This is a property of the exposure cage rather than of the
+#: software, hence the override.
+DEFAULT_MAX_ANIMALS = 6
+
+
+def get_max_animals():
+    '''
+    Number of animals that can be exposed at once, i.e. the number of fields
+    `CohortDialog` offers.
+
+    Read from the environment on each call rather than at import so that a rig
+    with a differently-sized cage only has to set NOISE_EXP_MAX_ANIMALS.
+    '''
+    value = os.environ.get('NOISE_EXP_MAX_ANIMALS', '')
+    if not value:
+        return DEFAULT_MAX_ANIMALS
+    try:
+        max_animals = int(value)
+    except ValueError:
+        max_animals = 0
+    if max_animals < 1:
+        # `repr` rather than the `!r` conversion: enaml's parser does not
+        # support conversions in f-strings (format specs are fine).
+        raise ValueError('NOISE_EXP_MAX_ANIMALS must be a positive integer, '
+                         f'not {repr(value)}.')
+    return max_animals
+
+
+class Animal(Atom):
+    '''
+    One animal in the cohort.
+
+    An Atom rather than a plain string so that the fields in `CohortDialog`
+    can two-way bind to an individual entry.
+    '''
+    id = Str()
+
+
+def make_animals(ids, max_animals=None):
+    '''
+    One `Animal` per field in `CohortDialog`, padded out to `max_animals`.
+
+    The dialog shows a fixed set of fields, so the list is always
+    `max_animals` long; a blank entry means that slot is empty.
+    '''
+    if max_animals is None:
+        max_animals = get_max_animals()
+    ids = list(ids)[:max_animals]
+    blanks = [Animal() for _ in range(max_animals - len(ids))]
+    return [Animal(id=i) for i in ids] + blanks
+
 
 class Settings(Atom):
 
     logging_level = Enum('trace', 'debug', 'info', 'warning', 'error')('info')
-    cohort = Str()
     experimenter = Str()
     note = Str()
     preference = Str()
 
     microphone_config = Dict()
     speaker_config = Dict()
+
+    #: IDs of the animals being exposed, entered via `CohortDialog`. A
+    #: ContainerList so that mutating it in place notifies as well.
+    animals = ContainerList(Str())
+
+    #: Derived from `animals`; never set directly.
+    cohort = Str()
+
+    def _observe_animals(self, event):
+        # The cohort is simply the animal IDs, space-delimited, which is how it
+        # gets embedded in the filename.
+        self.cohort = ' '.join(self.animals)
+
+    def set_animals(self, animals):
+        '''
+        Set the cohort from the entries in `CohortDialog`.
+
+        A blank field means that slot in the cage was empty, so it is dropped
+        rather than becoming an animal with no ID.
+        '''
+        ids = [a.id.strip() for a in animals]
+        self.animals = [i for i in ids if i]
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
@@ -68,7 +141,7 @@ class Settings(Atom):
         if save:
             args.append(str(DATA_ROOT / filename))
         if self.preference:
-            args.extend(['--preference', self.preference])
+            args.extend(['--preferences', self.preference])
         args.extend([
             '--debug-level-console', self.logging_level.upper(),
         ])
@@ -96,13 +169,61 @@ class Settings(Atom):
         # Set reasonable defaults for microphone config
         self.microphone_config.setdefault('microphone', None)
         self.microphone_config.setdefault('gain', 0)
-        mic_input_name = list(list_microphone_connections().values())[0]
+        mic_input_name = list(list_measurement_microphone_connections().values())[0]
         self.microphone_config.setdefault('name', mic_input_name)
 
         # Set reasonable defaults for speaker config
         self.speaker_config.setdefault('speaker', None)
         speaker_input_name = list(list_speaker_connections().values())[0]
         self.speaker_config.setdefault('name', speaker_input_name)
+
+
+enamldef CohortDialog(Dialog): dialog:
+    '''
+    Collects the IDs of the animals in the cohort, one field per animal.
+
+    There is one field per slot in the exposure cage (see `get_max_animals`)
+    rather than a list that grows on demand, since the number of animals that
+    can be exposed at once is fixed by the hardware. A blank field means that
+    slot is empty.
+
+    Edits its own copy of the list so that cancelling leaves the launcher's
+    cohort untouched. The caller builds `animals` with `make_animals` and
+    reads the IDs back out of it if `exec_` returns True.
+    '''
+    title = 'Cohort'
+
+    #: One `Animal` per field, blanks included.
+    attr animals = make_animals([])
+
+    Container:
+
+        Label:
+            text = 'Leave a field blank if that slot is empty.'
+
+        Looper:
+            iterable << dialog.animals
+            HGroup:
+                padding = 0
+                align_widths = False
+                Label:
+                    text = f'{loop_index + 1}'
+                Field:
+                    text := loop_item.id
+                    placeholder = 'Animal ID'
+
+        HGroup:
+            padding = 0
+            leading_spacer = spacer(0)
+            PushButton:
+                text = 'Cancel'
+                clicked ::
+                    dialog.reject()
+            PushButton:
+                text = 'OK'
+                default = True
+                clicked ::
+                    dialog.accept()
 
 
 enamldef Main(MainWindow):
@@ -187,7 +308,7 @@ enamldef Main(MainWindow):
             align_widths = False
             share_layout = True
             ObjectCombo:
-                attr connections = list_microphone_connections()
+                attr connections = list_measurement_microphone_connections()
                 attr connections_rev = {v: k for k, v in connections.items()}
                 items = list(connections.values())
                 selected ::
@@ -230,8 +351,18 @@ enamldef Main(MainWindow):
 
         Label:
             text = 'Cohort'
-        Field:
-            text := settings.cohort
+        PushButton: cohort_button:
+            name = 'cohort_button'
+            # A button rather than a Field: the cohort is built from the
+            # animal IDs entered in CohortDialog rather than typed in
+            # directly, and a button is the only widget enaml offers that is
+            # both non-editable and clickable.
+            text << settings.cohort or 'Click to add animals'
+            tool_tip = 'Click to edit the list of animals in this cohort'
+            clicked ::
+                dialog = CohortDialog(animals=make_animals(settings.animals))
+                if dialog.exec_():
+                    settings.set_animals(dialog.animals)
         Label:
             text = 'Experimenter'
         Field:
