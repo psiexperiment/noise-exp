@@ -9,6 +9,10 @@ from psi.application import (
     setup_windows_console
 )
 
+# psiapp.util rather than psiapp.api: the latter pulls in .enaml modules and
+# so needs the enaml import hook active, which this needs no part of.
+from psiapp.util import set_app_id
+
 
 def main():
     import argparse
@@ -21,6 +25,11 @@ def main():
     # both explicitly.
     setup_windows_console()
     install_exception_handler()
+
+    # Before QtApplication, and distinct from the `psi.psi` the exposure
+    # subprocess claims, so the launcher and the running experiment get their
+    # own taskbar buttons.
+    set_app_id('psi.noise-exp')
 
     load_paradigm_descriptions()
     app = QtApplication()

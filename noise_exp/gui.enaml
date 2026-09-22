@@ -14,6 +14,8 @@ from enaml.widgets.api import (
 from psi import get_config, get_config_folder
 from psi.application import list_preferences
 
+from .branding import load_app_icon
+
 from cftscal.api import (
     list_measurement_microphone_connections, list_speaker_connections,
     measurement_microphone_manager, speaker_manager
@@ -193,6 +195,10 @@ enamldef CohortDialog(Dialog): dialog:
     '''
     title = 'Cohort'
 
+    #: Set explicitly: the dialog has no parent, so it does not inherit the
+    #: main window's icon.
+    icon = load_app_icon()
+
     #: One `Animal` per field, blanks included.
     attr animals = make_animals([])
 
@@ -229,6 +235,7 @@ enamldef CohortDialog(Dialog): dialog:
 enamldef Main(MainWindow):
 
     title = 'Noise Exposure'
+    icon = load_app_icon()
     initial_size = (400, 300)
 
     attr settings = Settings()

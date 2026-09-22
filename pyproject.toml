@@ -18,6 +18,9 @@ dependencies = [
     # picks the microphone/speaker calibrations, and the paradigm loads
     # them via `cftscal.paradigms.objects`.
     "cftscal",
+    # set_app_id, so the launcher gets its own taskbar button rather than
+    # sharing the interpreter's with the experiments it spawns.
+    "psiapp",
 ]
 dynamic = ["version"]
 
@@ -32,6 +35,12 @@ dev = ["coloredlogs"]
 
 [project.scripts]
 noise-exp = "noise_exp.main:main"
+
+[tool.setuptools.package-data]
+noise_exp = [
+    "icons/*.ico",
+    "icons/*.png",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
