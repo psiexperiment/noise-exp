@@ -29,6 +29,7 @@ microphone_fft_mixin = {
         'waveform_averages': 10,
         'fft_freq_lb': 500,
         'fft_freq_ub': 64000,
+        'axis_scale': 'octave',
         'y_label': 'Microphone (dB)',
         'sources': {
             'microphone_filtered': {

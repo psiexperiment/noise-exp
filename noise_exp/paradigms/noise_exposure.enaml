@@ -192,6 +192,7 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
 
         StatusItem:
             label = 'Exposure status'
+            trailing_spacer = False
 
             ProgressBar: pb_experiment:
                 name = 'noise_progress'
