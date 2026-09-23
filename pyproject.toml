@@ -20,7 +20,7 @@ dependencies = [
     "cftscal",
     # set_app_id, so the launcher gets its own taskbar button rather than
     # sharing the interpreter's with the experiments it spawns.
-    "psiapp",
+    "psiapp >= 0.0.7",
 ]
 dynamic = ["version"]
 
