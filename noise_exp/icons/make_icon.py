@@ -1,19 +1,17 @@
-# Generates main-icon.png and main-icon.ico. Run from this directory:
+# Generates main-icon.png and main-icon.ico. Run from anywhere:
 #   python make_icon.py
 #
-# Deliberately mirrors cftscal/icons/make_icon.py (same frame, palette and
-# construction) so the two launchers read as part of one family. The signal
-# inside the frame is what differs: a chirp there, broadband noise here.
-import matplotlib as mp
-import matplotlib.pyplot as plt
-from matplotlib import patheffects as pe
+# The frame, palette and output sizes come from psiapp.icons, shared with the
+# other psi programs (pip install psiapp[icons]). Only the motif is drawn here:
+# broadband noise, where cftscal's icon has a chirp.
+from pathlib import Path
+
 import numpy as np
-from PIL import Image
+
+from psiapp.icons import make_icon, plot_signal
 
 
-#: Sizes Windows picks from when it renders the icon (taskbar, alt-tab,
-#: Explorer, ...).
-ICO_SIZES = [(s, s) for s in (16, 24, 32, 48, 64, 128, 256)]
+HERE = Path(__file__).parent
 
 
 def make_noise(n=500, seed=0):
@@ -38,47 +36,15 @@ def make_noise(n=500, seed=0):
     return y / np.abs(y).max() * 0.9
 
 
-def make_main_icon():
-    fig = plt.figure(frameon=False)
-    fig.set_size_inches(1, 1)
-    ax = plt.Axes(fig, [0, 0, 1, 1])
-    ax.set_axis_off()
-    fig.add_axes(ax)
-
-    background = mp.patches.Rectangle([0, 0], width=1, height=1, facecolor='midnightblue',
-                                      edgecolor='none', transform=ax.transAxes)
-    ax.add_patch(background)
-
+def draw(ax):
     t = np.linspace(0, 1, 500)
     y = make_noise(t.size)
 
     # Taper the noise on and off, evoking the fixed-duration exposure the
     # program delivers rather than a continuously running signal.
     envelope = np.sin(np.pi * t) ** 0.5
-    y = y * envelope
-
-    spline_effect = [
-        pe.Stroke(linewidth=4, foreground='white'),
-    ]
-    ax.fill_between(t, y, -1.5, color='cornflowerblue')
-    ax.plot(t, y, color='none', solid_capstyle='round', path_effects=spline_effect)
-
-    ax.axis(xmin=-0.05, xmax=1.05, ymin=-1.5, ymax=1.5)
-
-    border = mp.patches.Rectangle([0, 0], width=1, height=1, facecolor='none',
-                                  edgecolor='white', linewidth=10,
-                                  transform=ax.transAxes, zorder=3)
-    ax.add_patch(border)
-    fig.savefig('main-icon.png', transparent=False, bbox_inches='tight', pad_inches=0, dpi=256)
-
-
-def make_ico():
-    # cftscal used an online converter for this step; Pillow is already
-    # pulled in by matplotlib, so do it here instead.
-    image = Image.open('main-icon.png').convert('RGBA')
-    image.save('main-icon.ico', sizes=ICO_SIZES)
+    plot_signal(ax, t, y * envelope)
 
 
 if __name__ == '__main__':
-    make_main_icon()
-    make_ico()
+    make_icon(draw, HERE / 'main-icon.png', HERE / 'main-icon.ico')
