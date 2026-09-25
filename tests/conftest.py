@@ -21,11 +21,11 @@ with enaml.imports():
 #: it starts an exposure. `read_env_vars` in cftscal builds the name of
 #: every variable but the first from the value of the first one.
 CAL_ENV = {
-    'CFTS_MICROPHONE': 'mic_a',
-    'CFTS_MICROPHONE_MIC_A_GAIN': '20',
-    'CFTS_MICROPHONE_MIC_A': 'fake_calibrations.FakeMicrophoneCalibration::10',
-    'CFTS_SPEAKER': 'speaker_a',
-    'CFTS_SPEAKER_SPEAKER_A': 'fake_calibrations.FakeSpeakerCalibration',
+    'CFTSCAL_MICROPHONE': 'mic_a',
+    'CFTSCAL_MICROPHONE_MIC_A_GAIN': '20',
+    'CFTSCAL_MICROPHONE_MIC_A': 'fake_calibrations.FakeMicrophoneCalibration::10',
+    'CFTSCAL_SPEAKER': 'speaker_a',
+    'CFTSCAL_SPEAKER_SPEAKER_A': 'fake_calibrations.FakeSpeakerCalibration',
 }
 
 
