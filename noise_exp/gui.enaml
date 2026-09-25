@@ -391,6 +391,12 @@ enamldef Main(MainWindow):
                 preferences.items = [str(p) for p in list_preferences('noise_exposure')]
         PushButton: start:
             text = 'Start (save)'
+            # The cohort ends up in the filename, so there is nothing
+            # sensible to save under until at least one animal has been
+            # entered. Dry runs do not save, so they stay enabled.
+            enabled << bool(settings.cohort)
+            tool_tip << '' if settings.cohort else \
+                'Add at least one animal to the cohort before saving'
             clicked ::
                 settings.run_experiment(save=True)
                 preferences.items = [str(p) for p in list_preferences('noise_exposure')]
