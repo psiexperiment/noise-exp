@@ -36,6 +36,11 @@ dev = ["coloredlogs"]
 [project.scripts]
 noise-exp = "noise_exp.main:main"
 
+[project.entry-points."psi.settings"]
+# Lets psi-config (and anything else built on psi) see this
+# package's settings without importing the package itself.
+noise_exp = "noise_exp.config_defaults:DEFAULTS"
+
 [tool.setuptools.package-data]
 noise_exp = [
     "icons/*.ico",
