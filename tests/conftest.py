@@ -21,12 +21,33 @@ with enaml.imports():
 #: it starts an exposure. `read_env_vars` in cftscal builds the name of
 #: every variable but the first from the value of the first one.
 CAL_ENV = {
-    'CFTS_MICROPHONE': 'mic_a',
-    'CFTS_MICROPHONE_MIC_A_GAIN': '20',
-    'CFTS_MICROPHONE_MIC_A': 'fake_calibrations.FakeMicrophoneCalibration::10',
-    'CFTS_SPEAKER': 'speaker_a',
-    'CFTS_SPEAKER_SPEAKER_A': 'fake_calibrations.FakeSpeakerCalibration',
+    'CFTSCAL_MICROPHONE': 'mic_a',
+    'CFTSCAL_MICROPHONE_MIC_A_GAIN': '20',
+    'CFTSCAL_MICROPHONE_MIC_A': 'fake_calibrations.FakeMicrophoneCalibration::10',
+    'CFTSCAL_SPEAKER': 'speaker_a',
+    'CFTSCAL_SPEAKER_SPEAKER_A': 'fake_calibrations.FakeSpeakerCalibration',
 }
+
+
+@pytest.fixture(autouse=True)
+def isolated_config(tmp_path, monkeypatch):
+    '''
+    Give every test its own empty configuration file.
+
+    Settings resolve as default, then config.toml, then the environment,
+    and the file is whatever PSI_CONFIG_FILE points at -- on a developer
+    machine, the real rig configuration. A test asserting a built-in
+    default therefore passed or failed depending on what the person
+    running it had configured, and anything that saved settings wrote
+    into their live file. Both are fixed by pointing the whole suite at a
+    fresh tmp_path.
+    '''
+    from psi import config as psi_config
+
+    monkeypatch.setenv('PSI_CONFIG_FILE', str(tmp_path / 'config.toml'))
+    psi_config.reload_config()
+    yield
+    psi_config.reload_config()
 
 
 @pytest.fixture(scope='session')

@@ -218,3 +218,42 @@ def test_cohort_not_typed_into(app, gui):
 
     main.settings.animals = ['A1', 'A2']
     assert button[0].text == 'A1 A2'
+
+
+class TestSettingsPersistence:
+    '''
+    Set Defaults writes the launcher's selections to the configuration
+    file. It had no coverage at all, and crashed on a fresh install: the
+    microphone and speaker tables carry a None until a device has been
+    chosen, and TOML has no null.
+    '''
+
+    @pytest.fixture
+    def settings(self, app, gui):
+        # The configuration file is already a fresh one per test; see the
+        # isolated_config fixture in conftest.
+        return gui.Settings()
+
+    def test_save_on_a_fresh_install(self, settings):
+        # Nothing has been selected yet, so microphone/speaker are None.
+        assert settings.microphone_config['microphone'] is None
+        settings.save_config()
+
+    def test_selections_round_trip(self, settings, gui):
+        settings.logging_level = 'debug'
+        settings.microphone_config['gain'] = 40
+        settings.save_config()
+
+        restored = gui.Settings()
+        assert restored.logging_level == 'debug'
+        assert restored.microphone_config['gain'] == 40
+
+    def test_unset_device_comes_back_unset(self, settings, gui):
+        '''
+        The None is dropped on the way out, so it has to be restored on
+        the way in rather than coming back as a missing key.
+        '''
+        settings.save_config()
+        restored = gui.Settings()
+        assert restored.microphone_config['microphone'] is None
+        assert restored.speaker_config['speaker'] is None

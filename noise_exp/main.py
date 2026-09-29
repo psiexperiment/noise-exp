@@ -5,8 +5,7 @@ with enaml.imports():
 
 
 from psi.application import (
-    install_exception_handler, load_paradigm_descriptions,
-    setup_windows_console
+    install_exception_handler, setup_windows_console
 )
 
 # psiapp.util rather than psiapp.api: the latter pulls in .enaml modules and
@@ -31,7 +30,6 @@ def main():
     # own taskbar buttons.
     set_app_id('psi.noise-exp')
 
-    load_paradigm_descriptions()
     app = QtApplication()
     view = Main()
     view.show()

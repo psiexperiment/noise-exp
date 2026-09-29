@@ -1,4 +1,3 @@
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -11,7 +10,7 @@ from enaml.widgets.api import (
     Menu, MenuBar, ObjectCombo, PushButton
 )
 
-from psi import get_config, get_config_folder
+from psi import get_config, save_config
 from psi.application import list_preferences
 
 from .branding import load_app_icon
@@ -21,12 +20,7 @@ from cftscal.api import (
     measurement_microphone_manager, speaker_manager
 )
 
-DATA_ROOT = Path(get_config('DATA_ROOT'))
-
-#: Number of animals that can be exposed at once when NOISE_EXP_MAX_ANIMALS
-#: is not set. This is a property of the exposure cage rather than of the
-#: software, hence the override.
-DEFAULT_MAX_ANIMALS = 6
+DATA_ROOT = Path(get_config('PSI_DATA_ROOT'))
 
 
 def get_max_animals():
@@ -34,19 +28,20 @@ def get_max_animals():
     Number of animals that can be exposed at once, i.e. the number of fields
     `CohortDialog` offers.
 
-    Read from the environment on each call rather than at import so that a rig
-    with a differently-sized cage only has to set NOISE_EXP_MAX_ANIMALS.
+    Resolved on each call rather than at import so that a rig with a
+    differently-sized cage only has to set NOISE_EXP_MAX_ANIMALS, in the
+    configuration file or the environment.
     '''
-    value = os.environ.get('NOISE_EXP_MAX_ANIMALS', '')
-    if not value:
-        return DEFAULT_MAX_ANIMALS
     try:
-        max_animals = int(value)
+        max_animals = get_config('NOISE_EXP_MAX_ANIMALS')
     except ValueError:
+        # An environment variable that is not an integer at all; report it
+        # the same way as one that is an unusable integer.
         max_animals = 0
     if max_animals < 1:
         # `repr` rather than the `!r` conversion: enaml's parser does not
         # support conversions in f-strings (format specs are fine).
+        value = os.environ.get('NOISE_EXP_MAX_ANIMALS', max_animals)
         raise ValueError('NOISE_EXP_MAX_ANIMALS must be a positive integer, '
                          f'not {repr(value)}.')
     return max_animals
@@ -110,11 +105,7 @@ class Settings(Atom):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        default_config = get_config_folder() / 'noise-exp' / 'default.json'
-        if default_config.exists():
-            self.load_config(default_config)
-        else:
-            self.load_config()
+        self.load_config()
 
     def run_experiment(self, save=True):
         input_name = self.microphone_config['name']
@@ -130,11 +121,11 @@ class Settings(Atom):
             .get_current_calibration().to_string()
 
         env = {
-            'CFTS_MICROPHONE': input_name,
-            f'CFTS_MICROPHONE_{input_name.upper()}_GAIN': str(self.microphone_config['gain']),
-            f'CFTS_MICROPHONE_{input_name.upper()}': mic_cal_ref,
-            'CFTS_SPEAKER': output_name,
-            f'CFTS_SPEAKER_{output_name.upper()}': speaker_cal_ref,
+            'CFTSCAL_MICROPHONE': input_name,
+            f'CFTSCAL_MICROPHONE_{input_name.upper()}_GAIN': str(self.microphone_config['gain']),
+            f'CFTSCAL_MICROPHONE_{input_name.upper()}': mic_cal_ref,
+            'CFTSCAL_SPEAKER': output_name,
+            f'CFTSCAL_SPEAKER_{output_name.upper()}': speaker_cal_ref,
         }
 
         filename = f'{{date_time}} {self.experimenter} {self.cohort} {self.note} noise_exposure'
@@ -151,22 +142,27 @@ class Settings(Atom):
         print(' '.join(args))
         subprocess.check_output(args, env=dict(os.environ, **env))
 
-    def save_config(self, filename):
-        info = {
-            'logging_level': self.logging_level,
-            'preference': self.preference,
-            'microphone_config': self.microphone_config,
-            'speaker_config': self.speaker_config,
-        }
-        filename = Path(filename)
-        filename.write_text(json.dumps(info, indent=2))
+    def save_config(self):
+        '''
+        Save the current selections as this machine's defaults.
 
-    def load_config(self, filename=None):
-        if filename is not None:
-            filename = Path(filename)
-            info = json.loads(filename.read_text())
-            for k, v in info.items():
-                setattr(self, k, v)
+        Writes to the psi configuration file rather than a default.json of
+        its own: one file per launcher meant the same kind of setting
+        lived in several places, each with its own precedence relative to
+        the environment.
+        '''
+        save_config({
+            'NOISE_EXP_LOGGING_LEVEL': self.logging_level,
+            'NOISE_EXP_PREFERENCE': self.preference,
+            'NOISE_EXP_MICROPHONE': dict(self.microphone_config),
+            'NOISE_EXP_SPEAKER': dict(self.speaker_config),
+        })
+
+    def load_config(self):
+        self.logging_level = get_config('NOISE_EXP_LOGGING_LEVEL')
+        self.preference = get_config('NOISE_EXP_PREFERENCE')
+        self.microphone_config = dict(get_config('NOISE_EXP_MICROPHONE'))
+        self.speaker_config = dict(get_config('NOISE_EXP_SPEAKER'))
 
         # Set reasonable defaults for microphone config
         self.microphone_config.setdefault('microphone', None)
@@ -246,9 +242,7 @@ enamldef Main(MainWindow):
             Action:
                 text = 'Set Defaults\tCtrl+D'
                 triggered ::
-                    path = get_config_folder() / 'noise-exp'
-                    path.mkdir(exist_ok=True)
-                    settings.save_config(path / 'default.json')
+                    settings.save_config()
         Menu:
             title = '&Debug'
             Menu:
