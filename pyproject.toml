@@ -12,15 +12,14 @@ maintainers = [
 ]
 dependencies = [
     "psiaudio >= 0.4.4",
-    # 0.7.0 is the refactored psiexperiment (see its MIGRATION.md).
-    "psiexperiment >= 0.7.0",
+    # 0.9.0 is the first release with psi.launcher (and psi.core.app_id,
+    # which gives the launcher its own taskbar button rather than sharing
+    # the interpreter's with the experiments it spawns).
+    "psiexperiment >= 0.9.0",
     # The launcher and the paradigm both build on cftscal: the launcher
     # picks the microphone/speaker calibrations, and the paradigm loads
     # them via `cftscal.paradigms.objects`.
     "cftscal",
-    # set_app_id, so the launcher gets its own taskbar button rather than
-    # sharing the interpreter's with the experiments it spawns.
-    "psiapp >= 0.0.7",
 ]
 dynamic = ["version"]
 

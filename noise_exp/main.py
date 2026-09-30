@@ -8,9 +8,10 @@ from psi.application import (
     install_exception_handler, setup_windows_console
 )
 
-# psiapp.util rather than psiapp.api: the latter pulls in .enaml modules and
-# so needs the enaml import hook active, which this needs no part of.
-from psiapp.util import set_app_id
+# psi.core.app_id rather than psi.launcher.api: the latter pulls in .enaml
+# modules and so needs the enaml import hook active, which this needs no part
+# of.
+from psi.core.app_id import set_app_id
 
 
 def main():

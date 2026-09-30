@@ -1,14 +1,15 @@
 # Generates main-icon.png and main-icon.ico. Run from anywhere:
 #   python make_icon.py
 #
-# The frame, palette and output sizes come from psiapp.icons, shared with the
-# other psi programs (pip install psiapp[icons]). Only the motif is drawn here:
+# The frame, palette and output sizes come from psi.launcher.icons, shared with
+# the other psi programs (pip install psiexperiment[icons]). Only the motif is
+# drawn here:
 # broadband noise, where cftscal's icon has a chirp.
 from pathlib import Path
 
 import numpy as np
 
-from psiapp.icons import make_icon, plot_signal
+from psi.launcher.icons import make_icon, plot_signal
 
 
 HERE = Path(__file__).parent
