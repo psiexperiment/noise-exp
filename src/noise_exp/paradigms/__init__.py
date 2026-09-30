@@ -45,7 +45,7 @@ microphone_fft_mixin = {
 
 
 # The microphone and speaker are both configured from environment
-# variables set by the launcher in `noise_exp/gui.enaml`. Both objects
+# variables set by the launcher in `src/noise_exp/gui.enaml`. Both objects
 # require all of their settings (name, gain and calibration for the
 # microphone; name and calibration for the speaker), which is the
 # default `required_vars`, so neither needs an override here -- the

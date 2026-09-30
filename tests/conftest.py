@@ -17,7 +17,7 @@ with enaml.imports():
     from null_io import NullIOManifest
 
 
-#: What the launcher (`noise_exp/gui.enaml`) puts in the environment when
+#: What the launcher (`src/noise_exp/gui.enaml`) puts in the environment when
 #: it starts an exposure. `read_env_vars` in cftscal builds the name of
 #: every variable but the first from the value of the first one.
 CAL_ENV = {
