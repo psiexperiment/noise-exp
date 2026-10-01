@@ -17,7 +17,7 @@ from .branding import load_app_icon
 
 from cftscal.api import (
     list_measurement_microphone_connections, list_speaker_connections,
-    measurement_microphone_manager, speaker_manager
+    measurement_microphone_manager, resolve_io, speaker_manager
 )
 
 DATA_ROOT = Path(get_config('PSI_DATA_ROOT'))
@@ -138,6 +138,11 @@ class Settings(Atom):
         args.extend([
             '--debug-level-console', self.logging_level.upper(),
         ])
+        # The manifest the speaker and microphone choices were filled from,
+        # so the exposure runs on the hardware they were picked on.
+        manifest, io_env = resolve_io()
+        args.extend(['--io', manifest])
+        env.update(io_env)
         print(env)
         print(' '.join(args))
         subprocess.check_output(args, env=dict(os.environ, **env))
