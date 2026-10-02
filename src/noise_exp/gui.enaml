@@ -1,3 +1,6 @@
+import logging
+log = logging.getLogger(__name__)
+
 import os
 from pathlib import Path
 import subprocess
@@ -5,6 +8,7 @@ import subprocess
 from atom.api import Atom, ContainerList, Dict, Enum, Str
 from enaml.core.api import Looper
 from enaml.layout.api import align, hbox, spacer, vbox
+from enaml.stdlib.message_box import critical
 from enaml.widgets.api import (
     Action, ActionGroup, Container, Dialog, Field, HGroup, Label, MainWindow,
     Menu, MenuBar, ObjectCombo, PushButton
@@ -241,6 +245,29 @@ enamldef Main(MainWindow):
 
     attr settings = Settings()
 
+    func start_experiment(save):
+        '''
+        Run the exposure, reporting any failure in a dialog.
+
+        Errors raised in an enaml handler only reach sys.excepthook, which
+        logs them to the console, where the user running the launcher will
+        rarely be looking. Errors the exposure subprocess hits while starting
+        up are reported by the subprocess itself (`launch_experiment` shows
+        its own dialog and exits cleanly), so a non-zero exit status here
+        means it died some other way.
+        '''
+        try:
+            settings.run_experiment(save=save)
+        except subprocess.CalledProcessError as e:
+            log.exception(e)
+            critical(self, 'Experiment failed',
+                     f'The experiment exited with status {e.returncode}. '
+                     'See the console for details.')
+        except Exception as e:
+            log.exception(e)
+            critical(self, 'Error starting experiment', str(e))
+        preferences.items = [str(p) for p in list_preferences('noise_exposure')]
+
     MenuBar:
         Menu:
             title = '&File'
@@ -386,8 +413,7 @@ enamldef Main(MainWindow):
         PushButton: dry_run:
             text = 'Dry run (do not save)'
             clicked ::
-                settings.run_experiment(save=False)
-                preferences.items = [str(p) for p in list_preferences('noise_exposure')]
+                start_experiment(False)
         PushButton: start:
             text = 'Start (save)'
             # The cohort ends up in the filename, so there is nothing
@@ -397,5 +423,4 @@ enamldef Main(MainWindow):
             tool_tip << '' if settings.cohort else \
                 'Add at least one animal to the cohort before saving'
             clicked ::
-                settings.run_experiment(save=True)
-                preferences.items = [str(p) for p in list_preferences('noise_exposure')]
+                start_experiment(True)
