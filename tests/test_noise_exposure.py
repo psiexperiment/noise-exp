@@ -58,6 +58,16 @@ def test_calibrations_loaded(running_experiment):
     assert microphone.gain == 20
 
 
+def test_video_recorded_to_exposure_folder(running_experiment):
+    '''
+    The video, and its timestamps, are saved in the exposure folder.
+    '''
+    data = running_experiment.get_plugin('psi.data')
+    sink = data.find_sink('psivideo')
+    assert sink.client.recording == data.base_path / 'recording.avi'
+    assert (data.base_path / 'recording_timestamp.csv').exists()
+
+
 @pytest.mark.parametrize('name', [
     # Contributed by the exposure token. The band-pass filter that
     # isolates the exposure band is defined in terms of the last two.

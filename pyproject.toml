@@ -20,6 +20,9 @@ dependencies = [
     # picks the microphone/speaker calibrations, and the paradigm loads
     # them via `cftscal.paradigms.objects`.
     "cftscal",
+    # 0.0.8 is the first release with the psiexperiment plugin
+    # (`psivideo.plugin`) that records the video to the exposure folder.
+    "psivideo[psi] >= 0.0.8",
 ]
 dynamic = ["version"]
 

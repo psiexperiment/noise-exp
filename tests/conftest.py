@@ -79,6 +79,40 @@ def pinned_io():
     cftscal.util.IO_MANIFEST = original
 
 
+class FakeVideoClient:
+    '''
+    Stands in for `psivideo.client.SyncVideoClient` so the tests do not
+    need a psivideo server running. Records where it was asked to save.
+    '''
+
+    def __init__(self, *args, **kwargs):
+        self.recording = None
+
+    def __getattr__(self, name):
+        # Every other client call (connect, set_data_folder, snapshot, ...)
+        # is accepted and ignored.
+        return lambda *args, **kwargs: None
+
+    def start(self, filename):
+        self.recording = filename
+
+    def get_timing(self):
+        return {'frame_number': 0, 'timestamp': 0.0}
+
+
+@pytest.fixture(scope='session', autouse=True)
+def fake_video_client():
+    '''
+    Replace the psivideo client with `FakeVideoClient`. The plugin imports
+    the client when it first needs one, so patching the module is enough.
+    '''
+    import psivideo.client
+    original = psivideo.client.SyncVideoClient
+    psivideo.client.SyncVideoClient = FakeVideoClient
+    yield
+    psivideo.client.SyncVideoClient = original
+
+
 @pytest.fixture(scope='session')
 def cal_env():
     '''

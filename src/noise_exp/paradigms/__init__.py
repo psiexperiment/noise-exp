@@ -73,6 +73,14 @@ selectable_speaker_mixin = {
 }
 
 
+# Records the video to the exposure folder. Required, so the experiment will
+# not start unless the psivideo server is already running.
+video_mixin = {
+    'manifest': 'psivideo.plugin.PSIVideo',
+    'required': True,
+}
+
+
 ParadigmDescription(
     'noise_exposure', 'Noise exposure', 'cohort', [
         {'manifest': PATH + 'noise_exposure.NoiseControllerManifest'},
@@ -80,5 +88,6 @@ ParadigmDescription(
         microphone_fft_mixin,
         selectable_microphone_mixin,
         selectable_speaker_mixin,
+        video_mixin,
     ],
 )
