@@ -18,6 +18,7 @@ from psi import get_config, save_config
 from psi.application import list_preferences
 
 from .branding import load_app_icon
+from .video import PSIVideoMonitor
 
 from cftscal.api import (
     list_measurement_microphone_connections, list_speaker_connections,
@@ -245,6 +246,23 @@ enamldef Main(MainWindow):
 
     attr settings = Settings()
 
+    #: The exposure records video and will not start without psivideo, so
+    #: both run buttons wait for it.
+    attr video = PSIVideoMonitor()
+
+    initialized ::
+        video.start()
+
+    closed ::
+        video.stop()
+
+    func launch_psivideo():
+        try:
+            video.launch()
+        except Exception as e:
+            log.exception(e)
+            critical(self, 'Error starting psivideo', str(e))
+
     func start_experiment(save):
         '''
         Run the exposure, reporting any failure in a dialog.
@@ -410,17 +428,37 @@ enamldef Main(MainWindow):
             items = [str(p) for p in list_preferences('noise_exposure')]
             selected := settings.preference
             to_string = lambda x: Path(x).stem
+        Label:
+            text = 'Video'
+        HGroup:
+            padding = 0
+            align_widths = False
+            Label:
+                text << 'psivideo is running' if video.running else \
+                    'Starting psivideo...' if video.launching else \
+                    'psivideo is not running'
+            PushButton:
+                text = 'Open psivideo'
+                enabled << not (video.running or video.launching)
+                clicked ::
+                    launch_psivideo()
         PushButton: dry_run:
             text = 'Dry run (do not save)'
+            enabled << video.running
+            tool_tip << '' if video.running else \
+                'Open psivideo before starting the experiment'
             clicked ::
                 start_experiment(False)
         PushButton: start:
             text = 'Start (save)'
             # The cohort ends up in the filename, so there is nothing
             # sensible to save under until at least one animal has been
-            # entered. Dry runs do not save, so they stay enabled.
-            enabled << bool(settings.cohort)
-            tool_tip << '' if settings.cohort else \
-                'Add at least one animal to the cohort before saving'
+            # entered. Dry runs do not save, so they only wait for psivideo.
+            enabled << bool(settings.cohort) and video.running
+            tool_tip << \
+                'Add at least one animal to the cohort before saving' \
+                if not settings.cohort else \
+                'Open psivideo before starting the experiment' \
+                if not video.running else ''
             clicked ::
                 start_experiment(True)
