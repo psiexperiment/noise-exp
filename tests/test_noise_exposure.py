@@ -21,15 +21,16 @@ def test_paradigm_registered(paradigm):
     assert paradigm.experiment_type == 'cohort'
 
 
-def test_all_plugins_but_video_required(paradigm):
+def test_optional_plugins(paradigm):
     '''
-    Every mixin but the video is required, so `psi
-    noise_exp.paradigms.noise_exposure` (which deselects everything first)
-    still loads the full paradigm. Video is optional, so the exposure can
-    run where there is no camera; the launcher asks for it by default.
+    Every mixin but the video and the microphone's time view is required,
+    so `psi noise_exp.paradigms.noise_exposure` (which deselects everything
+    first) still loads the full exposure. Video is optional, so the
+    exposure can run where there is no camera; the launcher asks for it by
+    default. The time view is off unless asked for with `--plugins`.
     '''
-    optional = [p.id for p in paradigm.plugins if not p.required]
-    assert optional == ['psivideo']
+    optional = {p.id: p.selected for p in paradigm.plugins if not p.required}
+    assert optional == {'microphone_signal_view': False, 'psivideo': True}
 
 
 def test_launcher_names_the_video_plugin(gui):
