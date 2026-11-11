@@ -13,8 +13,18 @@ import pytest
 
 import enaml
 
+from fake_video import FakeVideoClient
+
 with enaml.imports():
     from null_io import NullIOManifest
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        '--update-golden', action='store_true',
+        help='Rewrite the golden exposure (tests/golden) from the current '
+        'code instead of checking against it. Review the diff before '
+        'committing it.')
 
 
 #: What the launcher (`src/noise_exp/gui.enaml`) puts in the environment when
@@ -77,27 +87,6 @@ def pinned_io():
     cftscal.util.IO_MANIFEST = NullIOManifest()
     yield
     cftscal.util.IO_MANIFEST = original
-
-
-class FakeVideoClient:
-    '''
-    Stands in for `psivideo.client.SyncVideoClient` so the tests do not
-    need a psivideo server running. Records where it was asked to save.
-    '''
-
-    def __init__(self, *args, **kwargs):
-        self.recording = None
-
-    def __getattr__(self, name):
-        # Every other client call (connect, set_data_folder, snapshot, ...)
-        # is accepted and ignored.
-        return lambda *args, **kwargs: None
-
-    def start(self, filename):
-        self.recording = filename
-
-    def get_timing(self):
-        return {'frame_number': 0, 'timestamp': 0.0}
 
 
 @pytest.fixture(scope='session', autouse=True)
