@@ -76,3 +76,6 @@ __enamlcache__/
 sandbox/
 .ropeproject/
 .ipynb_checkpoints/
+
+# Loopback test runs (tests/hardware)
+tests/hardware/results/

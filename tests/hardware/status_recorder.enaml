@@ -1,0 +1,72 @@
+'''
+Records what the paradigm shows in its status area, so a test can check
+what the person running the exposure would have read off the screen.
+
+Every status item (`psi.experiment.status`) shows its value in its anchor
+widget: for the exposure, a `Label` with the running average level and a
+`ProgressBar`. Each change to a label's `text`, or a progress bar's `value`
+or `maximum`, is appended to `path` as a line of JSON, `{"item": <status
+item label>, "attr": <attribute>, "value": <new value>}`, so the last line
+for each is what was on screen when the experiment ended.
+'''
+import json
+from pathlib import Path
+
+from enaml.widgets.api import Label, ProgressBar
+from enaml.workbench.api import Extension
+from enaml.workbench.core.api import Command
+
+from psi.controller.api import ExperimentAction
+from psi.core.api import StatusItem
+from psi.core.enaml.api import ExperimentManifest
+
+
+#: The attributes recorded for each type of widget.
+RECORDED = {Label: ['text'], ProgressBar: ['value', 'maximum']}
+
+
+def make_recorder(path, item, attr):
+    def record(change):
+        line = {'item': item, 'attr': attr, 'value': change['value']}
+        with Path(path).open('a') as fh:
+            fh.write(json.dumps(line) + '\n')
+    return record
+
+
+def start_recording(path, event):
+    point = event.workbench.get_extension_point('psi.experiment.status')
+    for extension in point.extensions:
+        for item in extension.get_children(StatusItem):
+            # Read now: by plugins_started the status area has been laid
+            # out, which is when psi resolves (and caches) each anchor.
+            widget = item.anchor
+            for widget_type, attrs in RECORDED.items():
+                if not isinstance(widget, widget_type):
+                    continue
+                for attr in attrs:
+                    record = make_recorder(path, item.label, attr)
+                    record({'value': getattr(widget, attr)})
+                    widget.observe(attr, record)
+
+
+enamldef StatusRecorder(ExperimentManifest): manifest:
+
+    id = 'noise_exp_test_status_recorder'
+    #: JSON-lines file to append to.
+    attr path
+
+    Extension:
+        id = manifest.id + '.commands'
+        point = 'enaml.workbench.core.commands'
+
+        Command:
+            id = manifest.id + '.start_recording'
+            handler = lambda e: start_recording(manifest.path, e)
+
+    Extension:
+        id = manifest.id + '.actions'
+        point = 'psi.controller.actions'
+
+        ExperimentAction:
+            event = 'plugins_started'
+            command = manifest.id + '.start_recording'
