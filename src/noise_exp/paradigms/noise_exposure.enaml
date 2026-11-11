@@ -45,32 +45,57 @@ def update_label(label, x):
 
 @coroutine
 def update_progress(pb, target):
-    pb.value = 0
+    '''
+    Show how many samples have been recorded in the progress bar.
+
+    The count is kept here, on the acquisition thread, and the bar is only
+    ever set to it. Adding each block to `pb.value` instead lost blocks: the
+    value is set on the GUI thread, so a block that arrived before the
+    previous block's update had been applied read a stale value and
+    overwrote that update.
+    '''
+    n = 0
+    deferred_call(setattr, pb, 'value', n)
     while True:
         data = (yield)
-        deferred_call(setattr, pb, 'value', pb.value + data.shape[-1])
+        n += data.shape[-1]
+        deferred_call(setattr, pb, 'value', n)
         target(data)
 
 
+def steady_state(rise_time, duration):
+    '''
+    Start and end (s, experiment time) of the part of the exposure at full
+    level: from the end of its onset ramp to the start of its offset ramp.
+    '''
+    start = EXPOSURE_START_DELAY + rise_time
+    end = EXPOSURE_START_DELAY + duration - rise_time
+    return start, end
+
+
 @coroutine
-def running_rms(discard, target):
+def running_rms(start, end, target):
+    '''
+    Send `target` the RMS of the samples from `start` to `end` (s) received
+    so far, each time a block brings more of them.
+
+    Samples are placed by each block's `s0`, so the window is the same
+    however the blocks fall. Nothing is sent before `start` or after `end`,
+    so once the window has passed the last value stays.
+    '''
     # Stores running sum of squares
     running_sum = 0
     running_n = 0
-    n_discard = None
-    data = (yield)
-    n_discard = int(np.ceil(discard * data.fs))
     while True:
-        if n_discard > 0:
-            discard = data[..., :n_discard]
-            n_discard -= discard.n_time
-            data = data[..., n_discard:]
-        if data.n_time != 0:
-            running_sum += (data**2).sum(axis=-1)
-            running_n += data.n_time
-            running_rms = np.sqrt(running_sum / running_n)
-            target(running_rms)
         data = (yield)
+        lb = max(round(start * data.fs) - data.s0, 0)
+        ub = min(round(end * data.fs) - data.s0, data.n_time)
+        if ub <= lb:
+            continue
+        data = data[..., lb:ub]
+        running_sum += (data**2).sum(axis=-1)
+        running_n += data.n_time
+        target(np.sqrt(running_sum / running_n))
 
 
 enamldef NoiseControllerManifest(ControllerManifest): manifest:
@@ -158,9 +183,9 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                         name = 'band_noise_level'
 
                 Coroutine:
-                    coroutine = partial(running_rms, \
-                                        EXPOSURE_START_DELAY + \
-                                        C.exposure_bandlimited_fir_noise_burst_rise_time)
+                    coroutine = partial(running_rms, *steady_state(
+                        C.exposure_bandlimited_fir_noise_burst_rise_time,
+                        C.exposure_bandlimited_fir_noise_burst_duration))
 
                     SPL:
                         Callback:
@@ -172,14 +197,17 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                 SPL:
                     name = 'noise_level'
 
-                Coroutine:
-                    coroutine = partial(running_rms, \
-                                        EXPOSURE_START_DELAY + \
-                                        C.exposure_bandlimited_fir_noise_burst_rise_time)
+            # Beside the RMS, not inside it, so the average is of the signal
+            # (like the band's): inside, it averaged the 1 s levels, leaving
+            # out the last partial second and updating once a second.
+            Coroutine:
+                coroutine = partial(running_rms, *steady_state(
+                    C.exposure_bandlimited_fir_noise_burst_rise_time,
+                    C.exposure_bandlimited_fir_noise_burst_duration))
 
-                    SPL:
-                        Callback:
-                            function = partial(update_label, average_level)
+                SPL:
+                    Callback:
+                        function = partial(update_label, average_level)
 
         Coroutine:
             source_name = 'monitor_microphone'

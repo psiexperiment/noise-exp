@@ -1,6 +1,7 @@
 '''
 Smoke tests for the noise-exposure paradigm and its launcher.
 '''
+import numpy as np
 import pytest
 
 import enaml
@@ -267,3 +268,102 @@ class TestSettingsPersistence:
         restored = gui.Settings()
         assert restored.microphone_config['microphone'] is None
         assert restored.speaker_config['speaker'] is None
+
+
+@pytest.fixture
+def exposure_module():
+    with enaml.imports():
+        from noise_exp.paradigms import noise_exposure
+    return noise_exposure
+
+
+def blocks(x, size, fs):
+    '''
+    `x` as the blocks of `size` samples an input sends on.
+    '''
+    from psiaudio.pipeline import PipelineData
+    return [PipelineData(x[i:i + size], fs=fs, s0=i)
+            for i in range(0, len(x), size)]
+
+
+@pytest.mark.parametrize('size', [1, 4, 5, 13, 50])
+def test_running_rms_window(exposure_module, size):
+    '''
+    The running average is of the samples from `start` to `end` only,
+    wherever the blocks fall. (It used to keep some of the block the start
+    fell in, and some of the block before that, and it had no end.)
+    '''
+    fs = 1000
+    # Loud, quiet from sample 13 to 43, loud again.
+    x = np.r_[np.full(13, 10.0), np.ones(30), np.full(7, 10.0)]
+    sent = []
+    pipeline = exposure_module.running_rms(0.013, 0.043, sent.append)
+    for block in blocks(x, size, fs):
+        pipeline.send(block)
+    assert sent
+    np.testing.assert_allclose(np.array(sent, dtype=float), 1)
+
+
+def test_running_rms_stops_at_end(exposure_module):
+    '''
+    Once the window has passed, nothing more is sent, so the last value
+    shown is the average over the whole window.
+    '''
+    fs = 1000
+    sent = []
+    pipeline = exposure_module.running_rms(0, 0.010, sent.append)
+    for block in blocks(np.ones(30), 10, fs):
+        pipeline.send(block)
+    assert len(sent) == 1
+
+
+def test_steady_state(exposure_module):
+    '''
+    The exposure is at full level from the end of its onset ramp to the
+    start of its offset ramp.
+    '''
+    delay = exposure_module.EXPOSURE_START_DELAY
+    assert exposure_module.steady_state(1, 10) == (delay + 1, delay + 9)
+
+
+def test_update_progress_counts_every_block(app, exposure_module):
+    '''
+    Blocks that arrive before the GUI has shown the previous ones are still
+    counted. (Each block used to be added to the value on screen, so all
+    but one of them were lost.)
+    '''
+    from enaml.qt.QtWidgets import QApplication
+    from enaml.widgets.api import ProgressBar
+
+    pb = ProgressBar(maximum=1000)
+    received = []
+    pipeline = exposure_module.update_progress(pb, received.append)
+    for block in blocks(np.zeros(30), 10, 1000):
+        pipeline.send(block)
+    QApplication.processEvents()
+    assert pb.value == 30
+    assert len(received) == 3
+
+
+def test_running_averages_are_of_the_signal(running_experiment,
+                                            exposure_module):
+    '''
+    Both running averages (overall and in band) are fed the filtered
+    microphone signal itself. The overall one used to sit inside the 1 s
+    RMS, so it averaged the 1 s levels, left out the last partial second and
+    changed only once a second.
+    '''
+    from functools import partial
+    from psi.controller.api import Coroutine
+
+    def is_running_rms(obj):
+        return isinstance(obj, Coroutine) \
+            and isinstance(obj.coroutine, partial) \
+            and obj.coroutine.func is exposure_module.running_rms
+
+    controller = running_experiment.get_plugin('psi.controller')
+    # Only the filters' own children: the band filter is itself a child of
+    # the overall one, so its whole subtree holds both averages.
+    for name in ('microphone_filtered', 'microphone_band_filtered'):
+        children = controller.get_input(name).children
+        assert len([c for c in children if is_running_rms(c)]) == 1, name
