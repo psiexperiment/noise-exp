@@ -32,3 +32,14 @@ opens one field per slot in the exposure cage. Six slots are offered by
 default. If your cage holds a different number of animals, set:
 
     NOISE_EXP_MAX_ANIMALS=4
+
+The microphone and speaker each take a calibration picked in the launcher,
+as in the cfts and abts launchers: one on file in cftscal, or a nominal
+sensitivity (mV/Pa for the microphone, dB SPL at 1 Vrms for the speaker) when
+none has been measured, or unity for the microphone.
+
+Video of the exposure is recorded with psivideo when "Record" is ticked next
+to Video in the launcher (the default). The exposure then waits for psivideo
+to be running. Untick it to run where there is no camera; set
+`NOISE_EXP_RECORD_VIDEO=false` (or use File > Set Defaults) to make that the
+default on a machine.

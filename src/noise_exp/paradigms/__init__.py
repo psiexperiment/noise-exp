@@ -73,11 +73,20 @@ selectable_speaker_mixin = {
 }
 
 
-# Records the video to the exposure folder. Required, so the experiment will
-# not start unless the psivideo server is already running.
+#: Id of the video plugin, which the launcher enables (`--plugins`) when
+#: "Record video" is ticked.
+VIDEO_PLUGIN = 'psivideo'
+
+
+# Records the video to the exposure folder. Optional, so that the exposure
+# can run where there is no camera; the launcher records video by default.
+# When it is enabled, the experiment will not start unless the psivideo
+# server is already running.
 video_mixin = {
     'manifest': 'psivideo.plugin.PSIVideo',
-    'required': True,
+    'id': VIDEO_PLUGIN,
+    'required': False,
+    'selected': True,
 }
 
 

@@ -2,10 +2,10 @@
 A stand-in for the psivideo client, so the exposure can run without a
 psivideo server (and camera) attached.
 
-The paradigm requires `psivideo.plugin.PSIVideo`, whose sink connects to
-the server as soon as the plugins start. The unit tests patch the client
-class in-process (see `conftest.py`); the loopback tests run the paradigm in
-a subprocess and swap it in with `hardware/no_video.enaml`.
+The launcher enables the paradigm's `psivideo.plugin.PSIVideo` by default,
+and its sink connects to the server as soon as the plugins start. The unit
+tests run the paradigm with it and patch the client class in-process (see
+`conftest.py`).
 '''
 
 
