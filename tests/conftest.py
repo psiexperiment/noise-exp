@@ -51,9 +51,19 @@ def isolated_config(tmp_path, monkeypatch):
     running it had configured, and anything that saved settings wrote
     into their live file. Both are fixed by pointing the whole suite at a
     fresh tmp_path.
+
+    The environment overrides both, so every setting set there is removed
+    too (e.g., CFTSCAL_IO on a machine set up for the keyboard manifest).
+    The variables the exposure is configured from (`cal_env`) have already
+    been read by then: the running experiment is set up first.
     '''
+    import os
     from psi import config as psi_config
 
+    settings = set(psi_config.setting_names())
+    for name in list(os.environ):
+        if name in settings or                 name.startswith(('PSI_', 'CFTSCAL_', 'NOISE_EXP_')):
+            monkeypatch.delenv(name)
     monkeypatch.setenv('PSI_CONFIG_FILE', str(tmp_path / 'config.toml'))
     psi_config.reload_config()
     yield
@@ -137,8 +147,10 @@ def running_experiment(app, cal_env, paradigm, tmp_path_factory):
     from psi.application.workbench import PSIWorkbench
 
     # The `psi` command-line launcher deselects everything and then loads
-    # only what is marked required, so do the same here.
+    # what is marked required plus the plugins it is given, so do the same
+    # here, with video recorded as the noise-exp launcher does by default.
     paradigm.disable_all_plugins()
+    paradigm.enable_plugin('psivideo')
     plugins = [p.manifest for p in paradigm.plugins if p.selected or p.required]
 
     workbench = PSIWorkbench()

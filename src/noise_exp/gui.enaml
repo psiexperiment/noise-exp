@@ -5,13 +5,13 @@ import os
 from pathlib import Path
 import subprocess
 
-from atom.api import Atom, ContainerList, Dict, Enum, Str
-from enaml.core.api import Looper
+from atom.api import Atom, Bool, ContainerList, Enum, List, Str, Typed
+from enaml.core.api import Conditional, Looper
 from enaml.layout.api import align, hbox, spacer, vbox
 from enaml.stdlib.message_box import critical
 from enaml.widgets.api import (
-    Action, ActionGroup, Container, Dialog, Field, HGroup, Label, MainWindow,
-    Menu, MenuBar, ObjectCombo, PushButton
+    Action, ActionGroup, CheckBox, Container, Dialog, Field, HGroup, Label,
+    MainWindow, Menu, MenuBar, ObjectCombo, PushButton
 )
 
 from psi import get_config, save_config
@@ -22,8 +22,17 @@ from .video import PSIVideoMonitor
 
 from cftscal.api import (
     list_measurement_microphone_connections, list_speaker_connections,
-    measurement_microphone_manager, resolve_io, speaker_manager
+    resolve_io
 )
+from cftscal.plugins.settings import (
+    InputSettings, MicrophoneCalibrationReference, OutputSettings,
+    SpeakerCalibrationReference
+)
+from cftscal.plugins.widgets import SensorView
+
+#: Id of the paradigm's video plugin (`noise_exp.paradigms.VIDEO_PLUGIN`),
+#: repeated rather than imported: importing the paradigms registers them.
+VIDEO_PLUGIN = 'psivideo'
 
 DATA_ROOT = Path(get_config('PSI_DATA_ROOT'))
 
@@ -76,6 +85,42 @@ def make_animals(ids, max_animals=None):
     return [Animal(id=i) for i in ids] + blanks
 
 
+def select_connection(available, attr, name):
+    '''
+    The entry in `available` whose `attr` is `name`, else the first entry
+    (e.g., the saved connection is not in this IO manifest), or None if there
+    are none.
+    '''
+    for item in available:
+        if getattr(item, attr) == name:
+            return item
+    return available[0] if available else None
+
+
+def restore_calibration(reference, config, old_key, old_type):
+    '''
+    Restore the calibration picked for a connection from its saved settings.
+
+    Settings saved before there was a choice of calibration type have only
+    the name of the calibration (under `old_key`, of type `old_type`) and,
+    for the microphone, its gain.
+    '''
+    try:
+        if 'calibration' in config:
+            reference.set_persistence(dict(config['calibration']))
+            return
+        if config.get(old_key):
+            reference.switch_type(old_type)
+            reference.name = config[old_key]
+        if 'gain' in config:
+            reference.gain = config['gain']
+    except Exception as e:
+        # E.g., a calibration type this cftscal no longer offers. The
+        # defaults are kept, and the launcher asks for a calibration.
+        log.warning('Could not restore the saved calibration %r: %s',
+                    dict(config), e)
+
+
 class Settings(Atom):
 
     logging_level = Enum('trace', 'debug', 'info', 'warning', 'error')('info')
@@ -83,8 +128,19 @@ class Settings(Atom):
     note = Str()
     preference = Str()
 
-    microphone_config = Dict()
-    speaker_config = Dict()
+    #: Record video of the exposure, which needs psivideo running.
+    record_video = Bool(True)
+
+    #: Every measurement microphone input and speaker output in the IO
+    #: manifest, each with the calibration picked for it (cftscal's
+    #: references, as in the abts and cfts launchers: a calibration on file,
+    #: or a nominal sensitivity, or unity for the microphone).
+    available_inputs = List(InputSettings)
+    available_outputs = List(OutputSettings)
+
+    #: The selected input and output. None if the IO manifest has none.
+    microphone = Typed(InputSettings)
+    speaker = Typed(OutputSettings)
 
     #: IDs of the animals being exposed, entered via `CohortDialog`. A
     #: ContainerList so that mutating it in place notifies as well.
@@ -112,26 +168,49 @@ class Settings(Atom):
         super().__init__(*args, **kw)
         self.load_config()
 
-    def run_experiment(self, save=True):
-        input_name = self.microphone_config['name']
-        input_device = self.microphone_config['microphone']
-        mic_cal_ref = measurement_microphone_manager \
-            .get_object(input_device) \
-            .get_current_calibration().to_string()
+    def _default_available_inputs(self):
+        return [
+            InputSettings(
+                input_name=name, input_label=label,
+                # A measurement microphone by default; also a generic one,
+                # unity or a nominal sensitivity.
+                sensor=MicrophoneCalibrationReference(device_type='Meas. Mic.'))
+            for label, name in list_measurement_microphone_connections().items()
+        ]
 
-        output_name = self.speaker_config['name']
-        output_device = self.speaker_config['speaker']
-        speaker_cal_ref = speaker_manager \
-            .get_object(output_device) \
-            .get_current_calibration().to_string()
+    def _default_available_outputs(self):
+        return [
+            OutputSettings(
+                output_name=name, output_label=label,
+                # A calibrated speaker, or a nominal sensitivity.
+                generator=SpeakerCalibrationReference())
+            for label, name in list_speaker_connections().items()
+        ]
 
-        env = {
-            'CFTSCAL_MICROPHONE': input_name,
-            f'CFTSCAL_MICROPHONE_{input_name.upper()}_GAIN': str(self.microphone_config['gain']),
-            f'CFTSCAL_MICROPHONE_{input_name.upper()}': mic_cal_ref,
-            'CFTSCAL_SPEAKER': output_name,
-            f'CFTSCAL_SPEAKER_{output_name.upper()}': speaker_cal_ref,
-        }
+    def check_ready(self):
+        '''
+        Raise ValueError, saying what is missing, unless a microphone and a
+        speaker, each with a calibration, have been picked.
+        '''
+        for kind, selected, reference in (
+                ('measurement microphone', self.microphone,
+                 self.microphone and self.microphone.sensor),
+                ('speaker', self.speaker,
+                 self.speaker and self.speaker.generator)):
+            if selected is None:
+                raise ValueError(f'The IO manifest has no {kind}.')
+            if not reference.is_configured():
+                raise ValueError(f'Pick a calibration for the {kind}.')
+
+    def build_command(self, save=True):
+        '''
+        The `psi` command that runs the exposure, and the environment to run
+        it in.
+        '''
+        self.check_ready()
+        env = {}
+        env.update(self.microphone.get_env_vars(env_prefix='CFTSCAL_MICROPHONE'))
+        env.update(self.speaker.get_env_vars(env_prefix='CFTSCAL_SPEAKER'))
 
         filename = f'{{date_time}} {self.experimenter} {self.cohort} {self.note} noise_exposure'
         filename = ' '.join(filename.split())
@@ -143,11 +222,17 @@ class Settings(Atom):
         args.extend([
             '--debug-level-console', self.logging_level.upper(),
         ])
+        if self.record_video:
+            args.extend(['--plugins', VIDEO_PLUGIN])
         # The manifest the speaker and microphone choices were filled from,
         # so the exposure runs on the hardware they were picked on.
         manifest, io_env = resolve_io()
         args.extend(['--io', manifest])
         env.update(io_env)
+        return args, env
+
+    def run_experiment(self, save=True):
+        args, env = self.build_command(save)
         print(env)
         print(' '.join(args))
         subprocess.check_output(args, env=dict(os.environ, **env))
@@ -161,29 +246,44 @@ class Settings(Atom):
         lived in several places, each with its own precedence relative to
         the environment.
         '''
+        microphone = {}
+        if self.microphone is not None:
+            microphone = {
+                'name': self.microphone.input_name,
+                'calibration': self.microphone.sensor.get_persistence(),
+            }
+        speaker = {}
+        if self.speaker is not None:
+            speaker = {
+                'name': self.speaker.output_name,
+                'calibration': self.speaker.generator.get_persistence(),
+            }
         save_config({
             'NOISE_EXP_LOGGING_LEVEL': self.logging_level,
             'NOISE_EXP_PREFERENCE': self.preference,
-            'NOISE_EXP_MICROPHONE': dict(self.microphone_config),
-            'NOISE_EXP_SPEAKER': dict(self.speaker_config),
+            'NOISE_EXP_RECORD_VIDEO': self.record_video,
+            'NOISE_EXP_MICROPHONE': microphone,
+            'NOISE_EXP_SPEAKER': speaker,
         })
 
     def load_config(self):
         self.logging_level = get_config('NOISE_EXP_LOGGING_LEVEL')
         self.preference = get_config('NOISE_EXP_PREFERENCE')
-        self.microphone_config = dict(get_config('NOISE_EXP_MICROPHONE'))
-        self.speaker_config = dict(get_config('NOISE_EXP_SPEAKER'))
+        self.record_video = get_config('NOISE_EXP_RECORD_VIDEO')
 
-        # Set reasonable defaults for microphone config
-        self.microphone_config.setdefault('microphone', None)
-        self.microphone_config.setdefault('gain', 0)
-        mic_input_name = list(list_measurement_microphone_connections().values())[0]
-        self.microphone_config.setdefault('name', mic_input_name)
+        config = get_config('NOISE_EXP_MICROPHONE')
+        self.microphone = select_connection(self.available_inputs,
+                                            'input_name', config.get('name'))
+        if self.microphone is not None:
+            restore_calibration(self.microphone.sensor, config,
+                                'microphone', 'Meas. Mic.')
 
-        # Set reasonable defaults for speaker config
-        self.speaker_config.setdefault('speaker', None)
-        speaker_input_name = list(list_speaker_connections().values())[0]
-        self.speaker_config.setdefault('name', speaker_input_name)
+        config = get_config('NOISE_EXP_SPEAKER')
+        self.speaker = select_connection(self.available_outputs,
+                                         'output_name', config.get('name'))
+        if self.speaker is not None:
+            restore_calibration(self.speaker.generator, config,
+                                'speaker', 'Speaker')
 
 
 enamldef CohortDialog(Dialog): dialog:
@@ -330,26 +430,16 @@ enamldef Main(MainWindow):
             for row in zip(labels, fields):
                 constraints.append(align('v_center', *row))
 
-            # Ensure mic/speaker fields are aligned
-            constraints.extend([
-                label_group.children[0].right == mic_group.children[0].right,
-                label_group.children[1].right == mic_group.children[1].right,
-                mic_group.children[0].right == speaker_group.children[0].right,
-                mic_group.children[1].right == speaker_group.children[1].right,
-            ])
+            # Line up the connection lists, and the calibration type lists
+            # that follow them (each SensorView's first widget).
+            constraints.append(align('width', mic_select, speaker_select))
+            views = [c for g in (mic_group, speaker_group)
+                     for c in g.children if isinstance(c, SensorView)]
+            type_combos = [v.visible_widgets()[0] for v in views
+                           if v.visible_widgets()]
+            if len(type_combos) > 1:
+                constraints.append(align('left', *type_combos))
             return constraints
-
-        Label:
-            text = ''
-
-        HGroup: label_group:
-            padding = 0
-            align_widths = False
-            share_layout = True
-            Label:
-                text = 'Connection'
-            Label:
-                text = 'Device'
 
         Label:
             text = 'Microphone'
@@ -358,26 +448,22 @@ enamldef Main(MainWindow):
             padding = 0
             align_widths = False
             share_layout = True
-            ObjectCombo:
-                attr connections = list_measurement_microphone_connections()
-                attr connections_rev = {v: k for k, v in connections.items()}
-                items = list(connections.values())
-                selected ::
-                    settings.microphone_config['name'] = selected
-                selected << settings.microphone_config['name']
-                to_string = lambda x: connections_rev[x]
-            ObjectCombo:
-                items = sorted(measurement_microphone_manager.list_names())
-                selected << settings.microphone_config['microphone']
-                selected ::
-                    settings.microphone_config['microphone'] = selected
-            ObjectCombo:
-                items = [-20, -10, 0, 10, 20, 30, 40, 50]
-                selected << settings.microphone_config['gain']
-                selected ::
-                    settings.microphone_config['gain'] = selected
-            Label:
-                text = 'dB gain'
+            ObjectCombo: mic_select:
+                items = settings.available_inputs
+                selected := settings.microphone
+                to_string = lambda x: x.input_label
+            Conditional:
+                condition << settings.microphone is not None
+                # Calibration type (a measurement or generic microphone on
+                # file, unity or a nominal sensitivity), the calibration,
+                # and the gain.
+                SensorView:
+                    sensor << settings.microphone.sensor
+                    show_label = False
+            Conditional:
+                condition << settings.microphone is None
+                Label:
+                    text = 'The IO manifest has no measurement microphone'
 
         Label:
             text = 'Speaker'
@@ -386,19 +472,20 @@ enamldef Main(MainWindow):
             padding = 0
             align_widths = False
             share_layout = True
-            ObjectCombo:
-                attr connections = list_speaker_connections()
-                attr connections_rev = {v: k for k, v in connections.items()}
-                items = list(connections.values())
-                selected ::
-                    settings.speaker_config['name'] = selected
-                selected << settings.speaker_config['name']
-                to_string = lambda x: connections_rev[x]
-            ObjectCombo:
-                items = sorted(speaker_manager.list_names())
-                selected << settings.speaker_config['speaker']
-                selected ::
-                    settings.speaker_config['speaker'] = selected
+            ObjectCombo: speaker_select:
+                items = settings.available_outputs
+                selected := settings.speaker
+                to_string = lambda x: x.output_label
+            Conditional:
+                condition << settings.speaker is not None
+                # A speaker calibration on file, or a nominal sensitivity.
+                SensorView:
+                    sensor << settings.speaker.generator
+                    show_label = False
+            Conditional:
+                condition << settings.speaker is None
+                Label:
+                    text = 'The IO manifest has no speaker'
 
         Label:
             text = 'Cohort'
@@ -433,20 +520,28 @@ enamldef Main(MainWindow):
         HGroup:
             padding = 0
             align_widths = False
+            CheckBox:
+                text = 'Record'
+                checked := settings.record_video
+                tool_tip = 'Record video of the exposure with psivideo'
             Label:
                 text << 'psivideo is running' if video.running else \
                     'Starting psivideo...' if video.launching else \
                     'psivideo is not running'
+                enabled << settings.record_video
             PushButton:
                 text = 'Open psivideo'
-                enabled << not (video.running or video.launching)
+                enabled << settings.record_video and \
+                    not (video.running or video.launching)
                 clicked ::
                     launch_psivideo()
         PushButton: dry_run:
             text = 'Dry run (do not save)'
-            enabled << video.running
-            tool_tip << '' if video.running else \
-                'Open psivideo before starting the experiment'
+            # Recording video needs psivideo running first.
+            enabled << video.running or not settings.record_video
+            tool_tip << '' if video.running or not settings.record_video \
+                else 'Open psivideo (or untick Record) before starting the ' \
+                'experiment'
             clicked ::
                 start_experiment(False)
         PushButton: start:
@@ -454,11 +549,13 @@ enamldef Main(MainWindow):
             # The cohort ends up in the filename, so there is nothing
             # sensible to save under until at least one animal has been
             # entered. Dry runs do not save, so they only wait for psivideo.
-            enabled << bool(settings.cohort) and video.running
+            enabled << bool(settings.cohort) and \
+                (video.running or not settings.record_video)
             tool_tip << \
                 'Add at least one animal to the cohort before saving' \
                 if not settings.cohort else \
-                'Open psivideo before starting the experiment' \
-                if not video.running else ''
+                'Open psivideo (or untick Record) before starting the ' \
+                'experiment' \
+                if not (video.running or not settings.record_video) else ''
             clicked ::
                 start_experiment(True)

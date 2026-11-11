@@ -21,12 +21,20 @@ def test_paradigm_registered(paradigm):
     assert paradigm.experiment_type == 'cohort'
 
 
-def test_all_plugins_required(paradigm):
+def test_all_plugins_but_video_required(paradigm):
     '''
-    Every mixin is required, so `psi noise_exp.paradigms.noise_exposure`
-    (which deselects everything first) still loads the full paradigm.
+    Every mixin but the video is required, so `psi
+    noise_exp.paradigms.noise_exposure` (which deselects everything first)
+    still loads the full paradigm. Video is optional, so the exposure can
+    run where there is no camera; the launcher asks for it by default.
     '''
-    assert all(p.required for p in paradigm.plugins)
+    optional = [p.id for p in paradigm.plugins if not p.required]
+    assert optional == ['psivideo']
+
+
+def test_launcher_names_the_video_plugin(gui):
+    from noise_exp.paradigms import VIDEO_PLUGIN
+    assert gui.VIDEO_PLUGIN == VIDEO_PLUGIN
 
 
 def test_experiment_runs(running_experiment):
@@ -234,9 +242,7 @@ def test_cohort_not_typed_into(app, gui):
 class TestSettingsPersistence:
     '''
     Set Defaults writes the launcher's selections to the configuration
-    file. It had no coverage at all, and crashed on a fresh install: the
-    microphone and speaker tables carry a None until a device has been
-    chosen, and TOML has no null.
+    file, and the next launcher starts from them.
     '''
 
     @pytest.fixture
@@ -246,28 +252,101 @@ class TestSettingsPersistence:
         return gui.Settings()
 
     def test_save_on_a_fresh_install(self, settings):
-        # Nothing has been selected yet, so microphone/speaker are None.
-        assert settings.microphone_config['microphone'] is None
+        # Nothing has been picked yet. It used to crash: TOML has no null.
+        assert settings.microphone.sensor.name == ''
         settings.save_config()
 
     def test_selections_round_trip(self, settings, gui):
         settings.logging_level = 'debug'
-        settings.microphone_config['gain'] = 40
+        settings.record_video = False
+        settings.microphone.sensor.switch_type('Nominal')
+        settings.microphone.sensor.sensitivity = 50
+        settings.microphone.sensor.gain = 40
+        settings.speaker.generator.switch_type('Nominal')
+        settings.speaker.generator.sensitivity = 120
         settings.save_config()
 
         restored = gui.Settings()
         assert restored.logging_level == 'debug'
-        assert restored.microphone_config['gain'] == 40
+        assert not restored.record_video
+        assert restored.microphone.input_name == 'mic_a'
+        sensor = restored.microphone.sensor
+        assert (sensor.device_type, sensor.sensitivity, sensor.gain) ==             ('Nominal', 50, 40)
+        generator = restored.speaker.generator
+        assert (generator.device_type, generator.sensitivity) ==             ('Nominal', 120)
 
-    def test_unset_device_comes_back_unset(self, settings, gui):
+    def test_old_settings_load(self, app, gui):
         '''
-        The None is dropped on the way out, so it has to be restored on
-        the way in rather than coming back as a missing key.
+        Settings saved before there was a choice of calibration type name
+        the measurement microphone and speaker calibrations directly.
         '''
-        settings.save_config()
-        restored = gui.Settings()
-        assert restored.microphone_config['microphone'] is None
-        assert restored.speaker_config['speaker'] is None
+        from psi import save_config
+        save_config({
+            'NOISE_EXP_MICROPHONE': {'name': 'mic_a', 'microphone': 'MMM0',
+                                     'gain': 20},
+            'NOISE_EXP_SPEAKER': {'name': 'speaker_a', 'speaker': 'Free'},
+        })
+        settings = gui.Settings()
+        sensor = settings.microphone.sensor
+        assert (sensor.device_type, sensor.name, sensor.gain) ==             ('Meas. Mic.', 'MMM0', 20)
+        generator = settings.speaker.generator
+        assert (generator.device_type, generator.name) == ('Speaker', 'Free')
+
+    def test_unknown_connection_falls_back_to_the_first(self, app, gui):
+        from psi import save_config
+        save_config({'NOISE_EXP_MICROPHONE': {'name': 'mic_gone'}})
+        assert gui.Settings().microphone.input_name == 'mic_a'
+
+
+class TestCommand:
+    '''
+    The command the launcher runs the exposure with.
+    '''
+
+    @pytest.fixture
+    def settings(self, app, gui, monkeypatch):
+        monkeypatch.setattr(gui, 'resolve_io',
+                            lambda: ('null_io.NullIOManifest', {}))
+        settings = gui.Settings()
+        settings.microphone.sensor.switch_type('Nominal')
+        settings.microphone.sensor.sensitivity = 10
+        settings.microphone.sensor.gain = 20
+        settings.speaker.generator.switch_type('Nominal')
+        settings.speaker.generator.sensitivity = 110
+        return settings
+
+    def test_environment(self, settings):
+        '''
+        The calibrations are passed the way the paradigm's cftscal
+        microphone and speaker read them.
+        '''
+        _, env = settings.build_command(save=False)
+        assert env['CFTSCAL_MICROPHONE'] == 'mic_a'
+        assert float(env['CFTSCAL_MICROPHONE_MIC_A_GAIN']) == 20
+        assert env['CFTSCAL_MICROPHONE_MIC_A'] ==             'cftscal.objects.NominalInputCalibration::10.0'
+        assert env['CFTSCAL_SPEAKER'] == 'speaker_a'
+        assert env['CFTSCAL_SPEAKER_SPEAKER_A'] ==             'cftscal.objects.NominalSpeakerCalibration::110.0'
+
+    @pytest.mark.parametrize('record', [True, False])
+    def test_video_plugin(self, settings, record):
+        settings.record_video = record
+        args, _ = settings.build_command(save=False)
+        assert (['--plugins', 'psivideo'] == args[-4:-2]) == record
+
+    def test_calibration_required(self, settings):
+        settings.speaker.generator.switch_type('Speaker')
+        with pytest.raises(ValueError, match='calibration for the speaker'):
+            settings.build_command(save=False)
+
+    def test_manifest_without_a_microphone(self, app, gui):
+        '''
+        An IO manifest without a measurement microphone (e.g., the keyboard
+        manifest used to have none) used to crash the launcher on start.
+        '''
+        settings = gui.Settings(available_inputs=[])
+        assert settings.microphone is None
+        with pytest.raises(ValueError, match='no measurement microphone'):
+            settings.build_command(save=False)
 
 
 @pytest.fixture

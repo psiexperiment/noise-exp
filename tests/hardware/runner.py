@@ -2,7 +2,6 @@
 Run the noise exposure through the Fireface in a subprocess, configured the
 way the noise-exp launcher (`src/noise_exp/gui.enaml`) would configure it.
 '''
-import os
 from pathlib import Path
 
 import pytest
@@ -16,9 +15,6 @@ from rig import INPUT_DBFS, MICROPHONE, RIG, SPEAKER
 
 HERE = Path(__file__).parent
 
-#: `tests/`, for `fake_video` (imported by `no_video.enaml`).
-TESTS = HERE.parent
-
 PARADIGM = 'noise_exposure'
 PARADIGM_MODULES = ('noise_exp.paradigms',)
 
@@ -30,8 +26,7 @@ OUTPUT_CAL_DB = 130
 #: that psi takes it out of what it records.
 MICROPHONE_GAIN = 20
 
-#: Extra manifests every run loads (see each module).
-NO_VIDEO = 'no_video.NoVideoManifest'
+#: Records what the status area showed (see the module).
 STATUS_RECORDER = 'status_recorder.StatusRecorder'
 
 
@@ -57,7 +52,6 @@ def exposure_env(mv_pa, gain=MICROPHONE_GAIN):
     nominal (flat) speaker and microphone calibration.
     '''
     key = MICROPHONE.upper()
-    pythonpath = [str(TESTS), os.environ.get('PYTHONPATH')]
     return {
         'CFTSCAL_IO': RIG.io_manifest,
         'CFTSCAL_MICROPHONE': MICROPHONE,
@@ -67,8 +61,6 @@ def exposure_env(mv_pa, gain=MICROPHONE_GAIN):
         'CFTSCAL_SPEAKER': SPEAKER,
         f'CFTSCAL_SPEAKER_{SPEAKER.upper()}':
             f'cftscal.objects.NominalSpeakerCalibration::{OUTPUT_CAL_DB}',
-        # Keeps any --src folders (which pytest_configure put here).
-        'PYTHONPATH': os.pathsep.join(p for p in pythonpath if p),
     }
 
 
@@ -77,10 +69,9 @@ def run_exposure(path, settings, env, status_path, timeout):
     Run the exposure until it ends on its own, saving its data to `path`
     and what it showed in its status area to `status_path`.
     '''
-    manifests = {
-        NO_VIDEO: {},
-        STATUS_RECORDER: {'path': str(status_path)},
-    }
+    # Without video: it is optional, and the runner enables no optional
+    # plugins.
+    manifests = {STATUS_RECORDER: {'path': str(status_path)}}
     return loopback_runner.run_paradigm(
         RIG, PARADIGM, path, settings, modules=PARADIGM_MODULES, env=env,
         manifests=manifests, timeout=timeout, cwd=HERE)

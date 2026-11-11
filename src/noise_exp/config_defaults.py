@@ -26,10 +26,14 @@ DEFAULTS = {
     'NOISE_EXP_PREFERENCE': Setting(
         str, '', doc='Preferences file to load.'),
 
-    #: Microphone and speaker selections, as tables so that the device,
-    #: connection name and gain travel together.
+    #: Microphone and speaker selections, as tables so that the connection
+    #: and the calibration picked for it (its type, the calibration or
+    #: nominal sensitivity, and the microphone's gain) travel together.
     'NOISE_EXP_MICROPHONE': Setting(
-        dict, {}, doc='Selected microphone, connection and gain.'),
+        dict, {}, doc='Selected microphone connection and calibration.'),
     'NOISE_EXP_SPEAKER': Setting(
-        dict, {}, doc='Selected speaker and connection.'),
+        dict, {}, doc='Selected speaker connection and calibration.'),
+    'NOISE_EXP_RECORD_VIDEO': Setting(
+        bool, True,
+        doc='Record video of the exposure (needs psivideo running).'),
 }
