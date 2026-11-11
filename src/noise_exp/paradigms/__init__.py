@@ -7,7 +7,7 @@ PATH = 'noise_exp.paradigms.'
 
 microphone_mixin = {
     'manifest': CORE_PATH + 'signal_mixins.SignalViewManifest',
-    'required': True,
+    'required': False,
     'attrs': {
         'id': 'microphone_signal_view',
         'title': 'Microphone view (time)',
