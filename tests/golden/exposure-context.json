@@ -4,10 +4,10 @@
   "exposure_bandlimited_fir_noise_burst_rise_time": 1.0,
   "exposure_bandlimited_fir_noise_burst_start_time": 0,
   "exposure_bandlimited_noise_audiogram_weighting": null,
-  "exposure_bandlimited_noise_correct_level": true,
   "exposure_bandlimited_noise_equalize": true,
   "exposure_bandlimited_noise_fh": 20000.0,
   "exposure_bandlimited_noise_fl": 100.0,
+  "exposure_bandlimited_noise_legacy_level": false,
   "exposure_bandlimited_noise_level": 60.0,
   "exposure_bandlimited_noise_max_correction": 20,
   "exposure_bandlimited_noise_polarity": 1,
@@ -22,7 +22,6 @@
   },
   "bandlimited_noise": {
    "audiogram_weighting": null,
-   "correct_level": true,
    "polarity": 1
   }
  }

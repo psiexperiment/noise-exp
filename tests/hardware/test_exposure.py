@@ -46,9 +46,6 @@ PARAMETERS = {
     'seed': 3,
     'equalize': True,
     'max_correction': 20,
-    # Fixed by the paradigm (a value of its token, not a context item), so
-    # it is not set, only used to regenerate the exposure.
-    'correct_level': True,
     'duration': 10,
     'rise_time': 1,
 }

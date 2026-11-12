@@ -139,7 +139,6 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                 values = {
                     'polarity': 1,
                     'audiogram_weighting': None,
-                    'correct_level': True,
                 }
 
     Extension:

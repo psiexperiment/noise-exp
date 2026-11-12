@@ -100,7 +100,7 @@ def exposure_template(fs, p, calibration):
     noise = stim.BandlimitedFIRNoiseFactory(
         fs, p['fl'], p['fh'], p['level'], seed=p['seed'],
         equalize=p['equalize'], max_correction=p['max_correction'],
-        calibration=calibration, correct_level=p['correct_level'])
+        calibration=calibration)
     factory = stim.Cos2EnvelopeFactory(fs, p['duration'], p['rise_time'],
                                        noise)
     return factory.get_samples_remaining()

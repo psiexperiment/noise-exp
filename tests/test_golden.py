@@ -12,7 +12,7 @@ factories (psiaudio). Two files are kept in `tests/golden`:
 * `exposure-context.json`: the context psi read for the exposure, i.e. every
   setting of the noise and its envelope, as the paradigm defaults them, and
   the values the paradigm fixes on each block of its token (`values`, e.g.
-  `correct_level`), which psi also fixes the context item of the same
+  `polarity`), which psi also fixes the context item of the same
   setting at.
 * `exposure.npz`: the waveform, with the duration and rise time shortened
   (see `DURATION` and `RISE_TIME`) to keep the file small. The noise is

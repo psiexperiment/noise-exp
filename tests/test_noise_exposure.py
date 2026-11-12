@@ -94,6 +94,21 @@ def test_context_item_exists(running_experiment, name):
     assert name in context.context_items
 
 
+def test_legacy_level_exposed(running_experiment):
+    '''
+    The operator can choose the legacy level scaling (psiaudio's
+    `BandlimitedFIRNoiseFactory`), to repeat an exposure run before the
+    noise's level was fixed. It is a setting of the exposure like its level
+    and band (so it is saved with the data), off unless chosen.
+    '''
+    context = running_experiment.get_plugin('psi.context')
+    item = context.context_items['exposure_bandlimited_noise_legacy_level']
+    assert item.visible
+    assert item.editable
+    assert item.selected == 'no'
+    assert context.get_value('exposure_bandlimited_noise_legacy_level') is False
+
+
 def test_inputs_available(running_experiment):
     '''
     The inputs the data sink and the plots are wired to all exist.
