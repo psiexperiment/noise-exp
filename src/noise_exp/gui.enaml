@@ -439,6 +439,7 @@ enamldef Main(MainWindow):
                            if v.visible_widgets()]
             if len(type_combos) > 1:
                 constraints.append(align('left', *type_combos))
+                constraints.append(align('width', *type_combos))
             return constraints
 
         Label:
