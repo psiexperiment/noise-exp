@@ -109,6 +109,67 @@ def test_legacy_level_exposed(running_experiment):
     assert context.get_value('exposure_bandlimited_noise_legacy_level') is False
 
 
+#: Each exposure setting shown in the rows, and the token's setting it drives.
+#: The rows keep the exposure's established names, so saved preferences and
+#: analyses of earlier data still find them.
+EXPOSURE_SETTINGS = {
+    'exposure_bandlimited_noise_fl': 'exposure_noise_fl',
+    'exposure_bandlimited_noise_fh': 'exposure_noise_fh',
+    'exposure_bandlimited_noise_level': 'exposure_noise_level',
+    'exposure_bandlimited_fir_noise_burst_duration': 'exposure_burst_duration',
+    'exposure_bandlimited_fir_noise_burst_rise_time':
+        'exposure_burst_rise_time',
+    'exposure_bandlimited_noise_equalize': 'exposure_noise_equalize',
+    'exposure_bandlimited_noise_max_correction':
+        'exposure_noise_max_correction',
+    'exposure_bandlimited_noise_seed': 'exposure_noise_seed',
+    'exposure_bandlimited_noise_legacy_level': 'exposure_noise_legacy_level',
+}
+
+
+def test_exposure_settings_in_rows(running_experiment):
+    '''
+    The exposure's settings are laid out as rows in their own group, and
+    every one of them is in a row.
+    '''
+    from psi.context.api import ContextRow
+    context = running_experiment.get_plugin('psi.context')
+    group = context.context_groups['exposure_settings']
+    rows = [c for c in group.children if isinstance(c, ContextRow)]
+    in_rows = {i.name for r in rows for i in r.fmt if not isinstance(i, str)}
+    assert in_rows == set(EXPOSURE_SETTINGS)
+    for name in EXPOSURE_SETTINGS:
+        assert context.context_items[name].visible
+
+
+@pytest.mark.parametrize('setting,token_setting',
+                         list(EXPOSURE_SETTINGS.items()))
+def test_exposure_settings_drive_token(running_experiment, setting,
+                                       token_setting):
+    '''
+    The token's own setting is set by an expression (which takes it out of
+    the settings shown) to the row's value, so the exposure played is the one
+    the rows describe.
+    '''
+    context = running_experiment.get_plugin('psi.context')
+    assert token_setting not in context.context_items
+    assert context.context_expressions[token_setting].expression == setting
+    assert context.get_value(token_setting) == context.get_value(setting)
+
+
+def test_exposure_is_fir_noise(running_experiment):
+    '''
+    The exposure is always the FIR noise: no token menu to switch it, so the
+    rows always describe the noise played.
+    '''
+    controller = running_experiment.get_plugin('psi.controller')
+    output = controller.get_output('exposure')
+    assert not output.configurable
+    assert output.token.name == 'burst'
+    noise, = output.token.blocks
+    assert noise.name == 'noise'
+
+
 def test_inputs_available(running_experiment):
     '''
     The inputs the data sink and the plots are wired to all exist.

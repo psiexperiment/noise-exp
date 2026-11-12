@@ -50,5 +50,5 @@ The noise is scaled so that its level through the speaker calibration is the
 level asked for. Exposures run before November 2026 scaled it differently
 (see `legacy_level` in psiaudio's `BandlimitedFIRNoiseFactory`), which
 usually missed the level by several dB. To repeat one of those exposures
-exactly, set "Legacy level scaling" to "yes" in the exposure's settings in
-the experiment window. It is saved with the data, like the other settings.
+exactly, set "legacy level scaling" to "yes" in the Exposure settings in the
+experiment window. It is saved with the data, like the other settings.

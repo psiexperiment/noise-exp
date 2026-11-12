@@ -11,7 +11,9 @@ from enaml.workbench.api import Extension
 
 from psiaudio.pipeline import coroutine
 
-from psi.context.api import ContextGroup
+from psi.context.api import (
+    ContextGroup, ContextRow, EnumParameter, Expression, Parameter
+)
 from psi.controller.api import (
     Callback, ControllerManifest, Coroutine, EpochOutput, ExperimentAction,
     ExperimentCallback, IIRFilter, RMS, SPL
@@ -19,10 +21,7 @@ from psi.controller.api import (
 from psi.core.api import StatusItem
 from psi.data.api import ChannelPlot, TimeContainer, ViewBox
 from psi.data.sinks.api import BinaryStore
-from psi.token.primitives import (
-    BandlimitedNoise, BandlimitedFIRNoise, BroadbandNoise, Cos2Envelope,
-    ShapedNoise
-)
+from psi.token.primitives import BandlimitedFIRNoise, Cos2Envelope
 
 EXPERIMENT = __name__.rsplit('.', 1)[-1]
 EXPOSURE_START_DELAY = 1
@@ -107,35 +106,23 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
         BinaryStore:
             continuous_inputs = ['monitor_microphone', 'noise_level']
 
+    # The exposure is always FIR noise (the output is not configurable). Its
+    # blocks are named `burst` and `noise` so that the settings psi makes for
+    # them (`exposure_burst_*`, `exposure_noise_*`) leave the exposure's
+    # established setting names to the rows below, which drive them. Saved
+    # preferences and analyses of earlier data use those names.
     Extension:
         id = EXPERIMENT + '.tokens'
         point = 'psi.token.tokens'
 
-        Cos2Envelope: bandlimited_noise:
-            name = 'bandlimited_noise_burst'
-            label = 'Bandlimited noise'
-            BandlimitedNoise:
-                pass
-
-        Cos2Envelope: broadband_noise:
-            name = 'broadband_noise_burst'
-            label = 'Broadband noise'
-            BroadbandNoise:
-                pass
-
-        Cos2Envelope: shaped_noise:
-            name = 'shaped_noise_burst'
-            label = 'Shaped noise'
-            ShapedNoise:
-                pass
-
-        Cos2Envelope: bandlimited_fir_noise:
-            name = 'bandlimited_fir_noise_burst'
+        Cos2Envelope: exposure_noise:
+            name = 'burst'
             label = 'FIR noise'
             values = {
                 'start_time': 0,
             }
             BandlimitedFIRNoise:
+                name = 'noise'
                 values = {
                     'polarity': 1,
                     'audiogram_weighting': None,
@@ -149,6 +136,120 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             name = 'hardware_settings'
             label = 'Hardware'
 
+        # The exposure's settings, laid out as sentences. They have a group of
+        # their own: the output's group (`exposure`) is left holding only the
+        # token's settings, which the rows drive, so psi hides it. Defaults
+        # are the token's.
+        ContextGroup:
+            name = 'exposure_settings'
+            label = 'Exposure'
+
+            ContextRow:
+                name = 'exposure_band'
+                fmt = ['Noise', fl, 'to', fh, 'Hz at', level, 'dB SPL']
+
+                Parameter: fl:
+                    name = 'exposure_bandlimited_noise_fl'
+                    label = 'exposure highpass cutoff (Hz)'
+                    default = 0.1e3
+                    scope = 'experiment'
+
+                Parameter: fh:
+                    name = 'exposure_bandlimited_noise_fh'
+                    label = 'exposure lowpass cutoff (Hz)'
+                    default = 20e3
+                    scope = 'experiment'
+
+                Parameter: level:
+                    name = 'exposure_bandlimited_noise_level'
+                    label = 'exposure level (dB SPL)'
+                    default = 60.0
+                    scope = 'experiment'
+
+            ContextRow:
+                name = 'exposure_timing'
+                fmt = ['Duration', duration, 's with', rise_time, 's ramp']
+
+                Parameter: duration:
+                    name = 'exposure_bandlimited_fir_noise_burst_duration'
+                    label = 'exposure duration (s)'
+                    default = 4.0
+                    scope = 'experiment'
+                    # Usually typed as an expression (e.g., 60 * 60 * 2).
+                    field_width = 90
+
+                Parameter: rise_time:
+                    name = 'exposure_bandlimited_fir_noise_burst_rise_time'
+                    label = 'exposure rise time (s)'
+                    default = 1.0
+                    scope = 'experiment'
+
+            ContextRow:
+                name = 'exposure_equalization'
+                fmt = ['Equalize', equalize, 'with max eq. correction',
+                       max_correction, 'dB']
+
+                EnumParameter: equalize:
+                    name = 'exposure_bandlimited_noise_equalize'
+                    label = 'equalize exposure'
+                    default = 'yes'
+                    choices = {'yes': True, 'no': False}
+                    scope = 'experiment'
+
+                Parameter: max_correction:
+                    name = 'exposure_bandlimited_noise_max_correction'
+                    label = 'exposure max eq. correction (dB)'
+                    default = 20
+                    scope = 'experiment'
+
+            ContextRow:
+                name = 'exposure_noise'
+                fmt = ['Random seed', seed, 'with legacy level scaling',
+                       legacy_level]
+
+                Parameter: seed:
+                    name = 'exposure_bandlimited_noise_seed'
+                    label = 'exposure random seed'
+                    default = 1
+                    scope = 'experiment'
+
+                # See `BandlimitedFIRNoiseFactory` (psiaudio): 'yes' repeats an
+                # exposure run before the noise's level was fixed.
+                EnumParameter: legacy_level:
+                    name = 'exposure_bandlimited_noise_legacy_level'
+                    label = 'exposure legacy level scaling'
+                    default = 'no'
+                    choices = {'yes': True, 'no': False}
+                    scope = 'experiment'
+
+        Expression:
+            parameter = 'exposure_burst_duration'
+            expression = 'exposure_bandlimited_fir_noise_burst_duration'
+        Expression:
+            parameter = 'exposure_burst_rise_time'
+            expression = 'exposure_bandlimited_fir_noise_burst_rise_time'
+        Expression:
+            parameter = 'exposure_noise_fl'
+            expression = 'exposure_bandlimited_noise_fl'
+        Expression:
+            parameter = 'exposure_noise_fh'
+            expression = 'exposure_bandlimited_noise_fh'
+        Expression:
+            parameter = 'exposure_noise_level'
+            expression = 'exposure_bandlimited_noise_level'
+        Expression:
+            parameter = 'exposure_noise_equalize'
+            expression = 'exposure_bandlimited_noise_equalize'
+        Expression:
+            parameter = 'exposure_noise_max_correction'
+            expression = 'exposure_bandlimited_noise_max_correction'
+        Expression:
+            parameter = 'exposure_noise_seed'
+            expression = 'exposure_bandlimited_noise_seed'
+        Expression:
+            parameter = 'exposure_noise_legacy_level'
+            expression = 'exposure_bandlimited_noise_legacy_level'
+
     Extension:
         id = EXPERIMENT + '.io'
         point = 'psi.controller.io'
@@ -157,7 +258,9 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             name = 'exposure'
             label = 'Exposure'
             target_name = 'speaker_output'
-            token = bandlimited_fir_noise
+            token = exposure_noise
+            # No token menu: the settings rows are the FIR noise's.
+            configurable = False
 
         IIRFilter:
             source_name = 'monitor_microphone'

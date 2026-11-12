@@ -37,9 +37,11 @@ GOLDEN = Path(__file__).parent / 'golden'
 CONTEXT_FILE = GOLDEN / 'exposure-context.json'
 WAVEFORM_FILE = GOLDEN / 'exposure.npz'
 
-#: Context items of the exposure's envelope.
-DURATION_NAME = 'exposure_bandlimited_fir_noise_burst_duration'
-RISE_TIME_NAME = 'exposure_bandlimited_fir_noise_burst_rise_time'
+#: Context items of the exposure's envelope, as the token names them (the
+#: paradigm's settings of the same values, which drive these, keep the
+#: exposure's established names; see `noise_exposure.enaml`).
+DURATION_NAME = 'exposure_burst_duration'
+RISE_TIME_NAME = 'exposure_burst_rise_time'
 
 #: The golden waveform's duration and rise time (s), shorter than the
 #: paradigm's defaults so the file stays small. Both ramps and a stretch of
