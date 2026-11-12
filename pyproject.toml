@@ -11,11 +11,12 @@ maintainers = [
     {name = "Brad Buran", email="buran@ohsu.edu"},
 ]
 dependencies = [
-    "psiaudio >= 0.4.4",
-    # 0.9.0 is the first release with psi.launcher (and psi.core.app_id,
-    # which gives the launcher its own taskbar button rather than sharing
-    # the interpreter's with the experiments it spawns).
-    "psiexperiment >= 0.9.0",
+    # 0.5.0 sets the FIR noise's level from its filter and has
+    # `legacy_level`.
+    "psiaudio >= 0.5.0",
+    # 0.9.7 has `Parameter.field_width` (the exposure's duration field);
+    # 0.9.6 the token's `legacy_level` setting.
+    "psiexperiment >= 0.9.7",
     # The launcher and the paradigm both build on cftscal: the launcher
     # picks the microphone/speaker calibrations, and the paradigm loads
     # them via `cftscal.paradigms.objects`.
