@@ -213,6 +213,35 @@ def describe(controller, enabled=True):
 
 
 @coroutine
+def running_median(n, target):
+    '''
+    Send `target` the median of each value and the `n - 1` values before it
+    (fewer at the start), each at the time of the newest value.
+
+    For plotting the 1 s levels as the loop judges them: it takes the median
+    of each window of `n` of them (see `control_level`). This slides by one
+    level rather than jumping a window at a time, so it is a running picture
+    of the loop's input rather than its exact decisions.
+    '''
+    n = max(int(round(n)), 1)
+    history = None
+    while True:
+        data = (yield)
+        x = np.asarray(data)
+        if history is None:
+            history = x[..., :0]
+        x = np.concatenate((history, x), axis=-1)
+        offset = x.shape[-1] - data.shape[-1]
+        # A copy of the block keeps its times (`s0`, `fs`).
+        result = data.copy()
+        for i in range(data.shape[-1]):
+            j = offset + i + 1
+            result[..., i] = np.median(x[..., max(j - n, 0):j], axis=-1)
+        history = x[..., x.shape[-1] - (n - 1):]
+        target(result)
+
+
+@coroutine
 def control_level(schedule, controller, sens, start, end, window, report,
                   target):
     '''

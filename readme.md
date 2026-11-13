@@ -83,4 +83,6 @@ The loop is off when "legacy level scaling" is on, since that repeats an
 earlier, uncontrolled exposure.
 
 The level plot shows the overall level (black) and the level in the exposure
-band (green), each over 1 s.
+band (green). The faint lines are the 1 s levels; the bold lines are their
+running median over the level control's window (10 s by default), which is
+what the loop judges. The plot spans the target level ± 3 dB.

@@ -465,3 +465,39 @@ def test_gain_change_envelope(plot):
     assert 0 < gain[second] < 3
     assert gain[-1] == pytest.approx(-3)
     np.testing.assert_allclose(out, noise * 10 ** (gain / 20))
+
+
+# -------- the running median plotted --------
+
+@pytest.mark.parametrize('size', [1, 3, 7, 20])
+def test_running_median(size):
+    '''
+    Each value sent is the median of that level and the `n - 1` before it
+    (fewer at the start), at that level's time, however the levels are
+    blocked.
+    '''
+    rng = np.random.default_rng(0)
+    levels = 100 + rng.normal(size=20)
+    n = 5
+    sent = []
+    pipeline = lc.running_median(n, sent.append)
+    for i in range(0, len(levels), size):
+        pipeline.send(PipelineData(levels[i:i + size], fs=1, s0=i))
+    expected = [np.median(levels[max(i - n + 1, 0):i + 1])
+                for i in range(len(levels))]
+    np.testing.assert_allclose(np.concatenate(sent), expected)
+    assert [b.s0 for b in sent] == list(range(0, len(levels), size))
+    assert all(b.fs == 1 for b in sent)
+
+
+def test_running_median_ignores_brief_noise():
+    '''
+    A level or two far off (e.g., an animal vocalizing) barely moves the
+    median, as it does not move the level control.
+    '''
+    levels = np.full(15, 100.0)
+    levels[[7, 8]] = 120
+    sent = []
+    pipeline = lc.running_median(10, sent.append)
+    pipeline.send(PipelineData(levels, fs=1, s0=0))
+    np.testing.assert_allclose(sent[0], 100)

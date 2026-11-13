@@ -198,17 +198,37 @@ def test_level_control_wired(running_experiment):
 
 def test_level_plot_legend(running_experiment):
     '''
-    The level plot shows the overall and in-band 1 s levels, named in its
-    legend, the band in green.
+    The level plot shows the overall and in-band 1 s levels, and their
+    running medians over the level control's window, named in its legend,
+    the band in green.
     '''
     from enaml.qt.QtWidgets import QApplication
     QApplication.processEvents()
     data = running_experiment.get_plugin('psi.data')
     container = data.find_plot_container('noise_level_container')
     labels = [label.text for _, label in container.legend.items]
-    assert labels == ['overall', 'in band']
-    band = data.find_plot('band_noise_level_channel_plot')
+    assert labels == ['overall, 1 s', 'in band, 1 s', 'overall, median',
+                      'in band, median']
+    band = data.find_plot('band_noise_level_median_channel_plot')
     assert band.pen.color().name() == '#008000'
+
+
+def test_level_plot_centered_on_target(running_experiment):
+    '''
+    Once the context is initialized, the level plot shows the target level
+    plus and minus `LEVEL_PLOT_SPAN` dB.
+    '''
+    from enaml.qt.QtWidgets import QApplication
+    from noise_exp.paradigms.noise_exposure import LEVEL_PLOT_SPAN
+    QApplication.processEvents()
+    context = running_experiment.get_plugin('psi.context')
+    target = context.get_value('exposure_bandlimited_noise_level')
+    data = running_experiment.get_plugin('psi.data')
+    vb = data.find_plot('band_noise_level_median_channel_plot').parent
+    assert vb.y_min == target - LEVEL_PLOT_SPAN
+    assert vb.y_max == target + LEVEL_PLOT_SPAN
+    assert vb.viewbox.viewRange()[1] == pytest.approx(
+        [target - LEVEL_PLOT_SPAN, target + LEVEL_PLOT_SPAN])
 
 
 @pytest.mark.parametrize('setting,token_setting',
@@ -246,7 +266,8 @@ def test_inputs_available(running_experiment):
     controller = running_experiment.get_plugin('psi.controller')
     for name in ('monitor_microphone', 'microphone_filtered',
                  'microphone_band_filtered', 'noise_level',
-                 'band_noise_level'):
+                 'band_noise_level', 'noise_level_median',
+                 'band_noise_level_median'):
         assert controller.get_input(name) is not None
 
 

@@ -23,14 +23,26 @@ from psi.data.api import ChannelPlot, TimeContainer, ViewBox
 from psi.data.sinks.api import BinaryStore, TableStore
 from psi.token.primitives import BandlimitedFIRNoise, Cos2Envelope
 
-from noise_exp.level_control import LevelControl
+from noise_exp.level_control import LevelControl, running_median
 
 EXPERIMENT = __name__.rsplit('.', 1)[-1]
 EXPOSURE_START_DELAY = 1
 
+#: The level plot shows the target level plus and minus this (dB).
+LEVEL_PLOT_SPAN = 3
+
 
 def configure_experiment(pb, fs, t0_end, **kwargs):
     pb.maximum = int(round(t0_end * fs))
+
+
+def set_level_limits(vb, level):
+    '''
+    Center the level plot on the target level, `LEVEL_PLOT_SPAN` dB either
+    side.
+    '''
+    vb.y_min = level - LEVEL_PLOT_SPAN
+    vb.y_max = level + LEVEL_PLOT_SPAN
 
 
 def update_label(label, x):
@@ -355,6 +367,14 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                     SPL:
                         name = 'band_noise_level'
 
+                        # For the plot: the 1 s levels as the level control
+                        # judges them.
+                        Coroutine:
+                            name = 'band_noise_level_median'
+                            coroutine = partial(
+                                running_median,
+                                C.exposure_level_control_window)
+
                 Coroutine:
                     coroutine = partial(running_rms, *steady_state(
                         C.exposure_bandlimited_fir_noise_burst_rise_time,
@@ -388,6 +408,11 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                 duration = 1
                 SPL:
                     name = 'noise_level'
+
+                    Coroutine:
+                        name = 'noise_level_median'
+                        coroutine = partial(running_median,
+                                            C.exposure_level_control_window)
 
             LevelControl:
                 name = 'level_control_overall'
@@ -470,6 +495,12 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             event = 'context_initialized'
             command = 'exposure.prepare'
 
+        ExperimentCallback:
+            event = 'context_initialized'
+            callback = set_level_limits
+            kwargs = {'vb': level_vb,
+                      'level': C.lookup('exposure_bandlimited_noise_level')}
+
         ExperimentAction:
             event = 'experiment_start'
             command = 'exposure.start'
@@ -494,19 +525,36 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             delay = 0
             span = 600
 
-            ViewBox:
+            # Centered on the target level once it is known (see
+            # `set_level_limits`), so the limits are not saved.
+            ViewBox: level_vb:
                 label = 'Noise level (dB SPL)'
-                save_limits = True
-                y_min = 108
-                y_max = 118
+                save_limits = False
 
+                # Faint: the 1 s levels. Bold: their running median over the
+                # level control's window, which is what the control judges.
                 ChannelPlot:
                     source_name = 'noise_level'
-                    label = 'overall'
+                    label = 'overall, 1 s'
+                    pen_color = 'silver'
                     show_in_legend = True
 
                 ChannelPlot:
                     source_name = 'band_noise_level'
-                    label = 'in band'
+                    label = 'in band, 1 s'
+                    pen_color = 'palegreen'
+                    show_in_legend = True
+
+                ChannelPlot:
+                    source_name = 'noise_level_median'
+                    label = 'overall, median'
+                    pen_color = 'black'
+                    pen_width = 2
+                    show_in_legend = True
+
+                ChannelPlot:
+                    source_name = 'band_noise_level_median'
+                    label = 'in band, median'
                     pen_color = 'green'
+                    pen_width = 2
                     show_in_legend = True
