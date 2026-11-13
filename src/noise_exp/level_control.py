@@ -45,7 +45,7 @@ from atom.api import Bool, Callable, Float, Typed, set_default
 from enaml.core.api import d_
 
 from psiaudio.gain import GainSchedule
-from psiaudio.pipeline import coroutine
+from psiaudio.pipeline import coroutine, PipelineData
 
 from psi.controller.api import ContinuousInput
 
@@ -227,18 +227,19 @@ def running_median(n, target):
     history = None
     while True:
         data = (yield)
-        x = np.asarray(data)
+        x = np.asarray(data, dtype=float)
         if history is None:
-            history = x[..., :0]
+            # NaN stands in for the levels before the first, which
+            # `nanmedian` leaves out.
+            history = np.full(x.shape[:-1] + (n - 1,), np.nan)
         x = np.concatenate((history, x), axis=-1)
-        offset = x.shape[-1] - data.shape[-1]
-        # A copy of the block keeps its times (`s0`, `fs`).
-        result = data.copy()
-        for i in range(data.shape[-1]):
-            j = offset + i + 1
-            result[..., i] = np.median(x[..., max(j - n, 0):j], axis=-1)
+        windows = np.lib.stride_tricks.sliding_window_view(x, n, axis=-1)
+        medians = np.nanmedian(windows, axis=-1)
         history = x[..., x.shape[-1] - (n - 1):]
-        target(result)
+        # Computed on plain arrays, then given the block's times: psiaudio's
+        # `PipelineData` cannot be assigned into one time sample at a time.
+        target(PipelineData(medians, fs=data.fs, s0=data.s0,
+                            channel=data.channel, metadata=data.metadata))
 
 
 @coroutine

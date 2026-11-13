@@ -469,8 +469,18 @@ def test_gain_change_envelope(plot):
 
 # -------- the running median plotted --------
 
+def level_blocks(levels, size):
+    '''
+    `levels` as the blocks of `size` 1 s levels the `SPL` input sends on:
+    one channel by time, as from the microphone.
+    '''
+    return [PipelineData(levels[np.newaxis, i:i + size], fs=1, s0=i)
+            for i in range(0, len(levels), size)]
+
+
+@pytest.mark.parametrize('n', [1, 5])
 @pytest.mark.parametrize('size', [1, 3, 7, 20])
-def test_running_median(size):
+def test_running_median(n, size):
     '''
     Each value sent is the median of that level and the `n - 1` before it
     (fewer at the start), at that level's time, however the levels are
@@ -478,14 +488,15 @@ def test_running_median(size):
     '''
     rng = np.random.default_rng(0)
     levels = 100 + rng.normal(size=20)
-    n = 5
     sent = []
     pipeline = lc.running_median(n, sent.append)
-    for i in range(0, len(levels), size):
-        pipeline.send(PipelineData(levels[i:i + size], fs=1, s0=i))
+    for block in level_blocks(levels, size):
+        pipeline.send(block)
     expected = [np.median(levels[max(i - n + 1, 0):i + 1])
                 for i in range(len(levels))]
-    np.testing.assert_allclose(np.concatenate(sent), expected)
+    assert all(b.shape == (1, min(size, 20 - b.s0)) for b in sent)
+    medians = np.concatenate([np.asarray(b) for b in sent], axis=-1)[0]
+    np.testing.assert_allclose(medians, expected)
     assert [b.s0 for b in sent] == list(range(0, len(levels), size))
     assert all(b.fs == 1 for b in sent)
 
@@ -499,5 +510,6 @@ def test_running_median_ignores_brief_noise():
     levels[[7, 8]] = 120
     sent = []
     pipeline = lc.running_median(10, sent.append)
-    pipeline.send(PipelineData(levels, fs=1, s0=0))
-    np.testing.assert_allclose(sent[0], 100)
+    for block in level_blocks(levels, 15):
+        pipeline.send(block)
+    np.testing.assert_allclose(np.asarray(sent[0]), 100)
