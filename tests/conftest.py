@@ -218,6 +218,11 @@ def running_experiment(app, cal_env, paradigm, tmp_path_factory):
 
     controller.start_experiment()
     pump()
+    # The exposure (4 s by default, which the golden pins) would end the
+    # experiment on a timer 5 s after the start, so tests that ran later in
+    # the session found it stopped. Cancel it to leave the experiment
+    # running.
+    controller.stop_timer('exposure_end')
     yield workbench
 
     controller.stop_experiment(skip_errors=True)

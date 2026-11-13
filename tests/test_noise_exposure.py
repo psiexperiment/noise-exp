@@ -158,32 +158,42 @@ def test_level_control_defaults(running_experiment, name, default):
     assert context.get_value(name) == default
 
 
-@pytest.mark.parametrize('measure,source', [
-    ('band', 'microphone_band_filtered'),
-    ('overall', 'microphone_filtered'),
-])
-def test_level_control_wired(running_experiment, measure, source):
+def test_level_control_wired(running_experiment):
     '''
     A level control is attached to each of the band-filtered and overall
     microphone signals; the one measuring the level chosen (band, by
     default) controls the exposure's gain, and the other does nothing.
+
+    The null engine does not configure the input chains (a real engine
+    does, through `Engine.configure`), so each control's callback is
+    configured here.
     '''
     from psiaudio.gain import GainSchedule
     from noise_exp.level_control import LevelControl
     controller = running_experiment.get_plugin('psi.controller')
     output = controller.get_output('exposure')
-    control = controller.get_input(f'level_control_{measure}')
-    assert isinstance(control, LevelControl)
-    assert control.source.name == source
-    assert control.exposure is output
-    assert control.enabled
-    assert isinstance(output.gain, GainSchedule)
-    if measure == 'band':
-        assert control.selected
-        assert control.controller is not None
-    else:
-        assert not control.selected
-        assert control.controller is None
+    band = controller.get_input('level_control_band')
+    overall = controller.get_input('level_control_overall')
+    for control, source in [(band, 'microphone_band_filtered'),
+                            (overall, 'microphone_filtered')]:
+        assert isinstance(control, LevelControl)
+        assert control.source.name == source
+        assert control.exposure is output
+        assert control.enabled
+    assert band.selected
+    assert not overall.selected
+
+    try:
+        band.configure_callback()
+        schedule = output.gain
+        assert isinstance(schedule, GainSchedule)
+        assert band.controller is not None
+        overall.configure_callback()
+        assert output.gain is schedule
+        assert overall.controller is None
+    finally:
+        output.gain = None
+        band.controller = None
 
 
 def test_level_plot_legend(running_experiment):
@@ -197,7 +207,7 @@ def test_level_plot_legend(running_experiment):
     container = data.find_plot_container('noise_level_container')
     labels = [label.text for _, label in container.legend.items]
     assert labels == ['overall', 'in band']
-    band = data.find_plot('band_noise_level_plot')
+    band = data.find_plot('band_noise_level_channel_plot')
     assert band.pen.color().name() == '#008000'
 
 
