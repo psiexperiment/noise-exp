@@ -63,12 +63,26 @@ exposure band (the default) or overall. At exposure levels, ambient sound
 and the animals add little to the overall level, so either works; the band
 level is the one psiaudio sets.
 
-* After the first window at full level (10 s by default), it trims the gain
-  so the band level is at target, by at most the "at the start" limit (6 dB).
-  A trim of more than 3 dB is reported: the speaker calibration may need
+* The exposure starts at the gain set by "Start with a trim of ... dB" (0 by
+  default). Use it for your own pre-calibration of the booth: it applies
+  whether or not the level is controlled, and the loop's corrections are
+  made about it.
+* After the first window (10 s by default), it trims the gain so the band
+  level is at target, by at most the "at the start" limit (6 dB). A trim of
+  more than 3 dB is reported: the speaker calibration (or your trim) may need
   redoing.
 * From then on, it corrects drift, half the remaining error at a time, by at
-  most the "then" limit (2 dB) on top of the trim.
+  most the "after" limit (2 dB) on top of the trim.
+
+The loop also measures during the top 6 dB of the onset ramp (about its
+second half), comparing each second with the ramp's level then. While the
+ramp is playing, it trims on as few as 3 s, early enough for the trim to
+reach the speaker before the exposure is at full level. For that, the ramp's
+second half has to last about 3 s plus the seconds the output buffers ahead,
+plus a second. A shorter ramp still trims as early as it can. If fewer than
+3 s of the ramp can be measured (e.g., the 1 s default), the first trim comes
+after a full window, and the exposure plays at the untrimmed level until
+then.
 
 Each window's level is the median of its 1 s levels, so brief noises from
 the animals don't move the gain, and only seconds played at the gain last set
@@ -80,7 +94,7 @@ range of the correction and the loop stops. Every decision is saved with the
 data in `level_control.csv`.
 
 The loop is off when "legacy level scaling" is on, since that repeats an
-earlier, uncontrolled exposure.
+earlier, uncontrolled exposure (the trim, if not 0, still applies).
 
 The level plot shows the overall level (black) and the level in the exposure
 band (green). The faint lines are the 1 s levels; the bold lines are their

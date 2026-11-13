@@ -8,10 +8,24 @@ the monitor microphone (the ground truth) sits elsewhere in the booth, so it
 can read a few dB off target, and the level can drift during an exposure.
 This adjusts the exposure's gain from the microphone's band level:
 
-* After the first `window` seconds at full level, a one-off *trim* brings the
-  band level to the target (at most `max_trim` dB).
+* The exposure starts at an `initial` gain (dB, 0 by default), e.g., from a
+  pre-calibration of the booth done by the operator.
+* After the first `window` seconds, a one-off *trim* brings the band level to
+  the target (at most `max_trim` dB either side of the initial gain).
 * From then on, a slow integral loop corrects *drift* (at most `max_drift` dB
   on top of the trim), half the remaining error at a time.
+
+The seconds judged include the top `RAMP_RANGE` dB of the exposure's onset
+ramp, each level taken relative to the ramp's level over that second (the
+system is linear, so the offset partway up the ramp is the offset at full
+level). This lets the trim be measured, and reach the speaker, before the
+exposure is at full level: while the onset ramp is still playing, the trim is
+decided early (on as few as `MIN_TRIM_SECONDS`) rather than let the output
+render full-level samples at the untrimmed gain. To have the trim in place
+before full level, the top `RAMP_RANGE` dB of the ramp (about its second
+half) must last `MIN_TRIM_SECONDS`, plus the seconds the output buffers
+ahead, plus a second or so. A shorter ramp still trims as early as it can;
+one with fewer than `MIN_TRIM_SECONDS` judged trims after `window` seconds.
 
 Each decision uses only seconds of the recording during which the exposure
 was played at the gain the loop last set (see `psiaudio.gain.GainSchedule`).
@@ -78,6 +92,15 @@ TRIP_SECONDS = 3
 #: a row.
 LIMIT_UPDATES = 5
 
+#: Seconds of the onset ramp within this many dB of full level are judged
+#: (relative to the ramp's level). Much lower, ambient sound would bias the
+#: measured offset (20 dB below target in band adds 0.2 dB here).
+RAMP_RANGE = 6
+
+#: Fewest seconds the trim is decided on (when decided early, during the
+#: onset ramp).
+MIN_TRIM_SECONDS = 3
+
 #: Duration (s) of the gain's ramp from one value to the next.
 RAMP_TIME = 0.1
 
@@ -91,14 +114,17 @@ class LevelController:
     '''
     The decisions of the loop, given the band level it measures.
 
-    The gain (dB) it asks for is `trim + drift`. Call `check_second` with
-    each 1 s band level, and `update` with the median of each window of them
-    measured at the gain it last asked for. Each returns None when there is
+    The gain (dB) it asks for is `initial + trim + drift`. Call
+    `check_second` with each 1 s band level, and `update` with the median of
+    each window of them measured at the gain it last asked for. Each returns None when there is
     nothing to do, or a record of what it decided, whose `gain` is the gain
     to apply (None to leave the gain as it is).
     '''
-    def __init__(self, target, max_trim=6, max_drift=2):
+    def __init__(self, target, max_trim=6, max_drift=2, initial=0):
         self.target = target
+        #: Gain (dB) the exposure starts at, set by the operator; the trim
+        #: and drift are bounded about it.
+        self.initial = float(initial)
         self.max_trim = max_trim
         self.max_drift = max_drift
         #: None until the first window has been measured.
@@ -110,17 +136,18 @@ class LevelController:
 
     @property
     def gain(self):
-        return (self.trim or 0.0) + self.drift
+        return self.initial + (self.trim or 0.0) + self.drift
 
     @property
     def min_gain(self):
-        return -(self.max_trim + self.max_drift)
+        return self.initial - (self.max_trim + self.max_drift)
 
     def _record(self, action, level, message='', gain=None):
         return {
             'action': action,
             'level': level,
             'target': self.target,
+            'initial': self.initial,
             'trim': self.trim if self.trim is not None else 0.0,
             'drift': self.drift,
             'gain': gain,
@@ -141,9 +168,9 @@ class LevelController:
         else:
             self._over = 0
         if self._over == TRIP_SECONDS:
-            gain = self.min_gain
-            self.trim = gain
+            self.trim = -(self.max_trim + self.max_drift)
             self.drift = 0.0
+            gain = self.min_gain
             m = (f'band level {level:.1f} dB SPL, more than {TRIP_LEVEL} dB '
                  f'above target for {TRIP_SECONDS} s: exposure turned down '
                  f'{-gain:.1f} dB. Check the speaker and microphone.')
@@ -166,7 +193,8 @@ class LevelController:
 
         error = self.target - level
         if self.trim is None:
-            wanted = self.gain + error
+            # Measured at the initial gain (no trim or drift yet).
+            wanted = error
             self.trim = float(np.clip(wanted, -self.max_trim, self.max_trim))
             message = ''
             if abs(wanted) > self.max_trim:
@@ -207,6 +235,8 @@ def describe(controller, enabled=True):
     if not enabled:
         return 'off'
     if controller.trim is None:
+        if controller.initial:
+            return f'{controller.gain:+.1f} dB (measuring)'
         return 'measuring'
     state = 'FROZEN' if controller.frozen else 'holding'
     return f'{controller.gain:+.1f} dB ({state})'
@@ -242,9 +272,27 @@ def running_median(n, target):
                             channel=data.channel, metadata=data.metadata))
 
 
+def ramp_level(t0, t1, start, rise_time):
+    '''
+    Level (dB re full level) of the exposure's cos² onset ramp, which ends at
+    `start` (s) after `rise_time` (s), averaged in power over `t0` to `t1`
+    (s). 0 at full level, -inf before the ramp.
+    '''
+    t = np.linspace(t0, t1, 1001)
+    t = (t[1:] + t[:-1]) / 2
+    if rise_time > 0:
+        frac = np.clip((t - (start - rise_time)) / rise_time, 0, 1)
+    else:
+        frac = (t >= start).astype(float)
+    # The ramp's amplitude is sin²; its power, the square of that.
+    power = np.mean(np.sin(np.pi / 2 * frac) ** 4)
+    with np.errstate(divide='ignore'):
+        return float(10 * np.log10(power))
+
+
 @coroutine
 def control_level(schedule, controller, sens, start, end, window, report,
-                  target):
+                  target, rise_time=0):
     '''
     Bin the band signal into 1 s levels, and pass the controller each window
     of `window` of them measured at the gain it last asked for.
@@ -252,8 +300,13 @@ def control_level(schedule, controller, sens, start, end, window, report,
     The input's samples are taken to be on the same clock as the output's
     (both count from the start of acquisition), so input second `k` heard
     output samples from `(k - GUARD) * fs` to `(k + 1) * fs` (with the output's
-    fs). Only seconds within `start` to `end` (s, the exposure at full level)
-    count.
+    fs). Only seconds up to `end` (s, the start of the offset ramp) count,
+    and of the onset ramp, those within `RAMP_RANGE` dB of full level, each
+    taken relative to the ramp's level (see `ramp_level`).
+
+    Until the trim, a window is cut short (down to `MIN_TRIM_SECONDS`) while
+    its seconds are still on the onset ramp, if waiting another second would
+    let the output render samples at full level before the trim is set.
 
     Parameters
     ----------
@@ -270,6 +323,8 @@ def control_level(schedule, controller, sens, start, end, window, report,
         Called with each decision's record (with its `time`, s).
     target : callable
         Next step of the pipeline (the band signal is passed on unchanged).
+    rise_time : float
+        Duration of the onset ramp, which ends at `start` (s).
     '''
     bin_k = None
     bin_sum = 0.0
@@ -296,10 +351,14 @@ def control_level(schedule, controller, sens, start, end, window, report,
             # A full second of the recording.
             t0, t1 = k * n_bin / data.fs, (k + 1) * n_bin / data.fs
             bin_k = None
-            if t0 < start or t1 > end:
+            if t1 > end:
+                continue
+            ramp_db = 0.0 if t0 >= start else \
+                ramp_level(t0, t1, start, rise_time)
+            if ramp_db < -RAMP_RANGE:
                 continue
             with np.errstate(divide='ignore'):
-                level = 10 * np.log10(bin_sum / n_bin) + sens
+                level = 10 * np.log10(bin_sum / n_bin) + sens - ramp_db
 
             record = controller.check_second(level)
             if record is not None:
@@ -315,7 +374,13 @@ def control_level(schedule, controller, sens, start, end, window, report,
                 levels = []
                 continue
             levels.append(level)
-            if len(levels) < window:
+            # On the ramp, trim now if, by the next second, the output will
+            # have rendered past its end at the untrimmed gain.
+            early = (controller.trim is None
+                     and len(levels) >= MIN_TRIM_SECONDS
+                     and t1 <= start
+                     and schedule.rendered / schedule.fs + 1 >= start)
+            if len(levels) < window and not early:
                 continue
 
             record = controller.update(float(np.median(levels)))
@@ -344,8 +409,13 @@ class LevelControl(ContinuousInput):
     #: different signals).
     selected = d_(Bool(True))
 
-    #: Whether to control the level. When False, the output has no gain.
+    #: Whether to control the level. When False, the output is held at
+    #: `initial_gain`.
     enabled = d_(Bool(True))
+
+    #: Gain (dB) the exposure starts at (e.g., from the operator's own
+    #: pre-calibration of the booth); the loop's corrections are about it.
+    initial_gain = d_(Float(0))
 
     #: Target band level (dB SPL).
     target_level = d_(Float())
@@ -360,6 +430,9 @@ class LevelControl(ContinuousInput):
     start = d_(Float())
     end = d_(Float())
 
+    #: Duration (s) of the onset ramp, which ends at `start`.
+    rise_time = d_(Float(0))
+
     #: Called, from the acquisition thread, with each decision's record and
     #: the status text; should hand them to the GUI thread.
     report = d_(Callable())
@@ -373,12 +446,20 @@ class LevelControl(ContinuousInput):
         if not self.selected:
             return cb
         if not self.enabled:
-            self.exposure.gain = None
-            self.report(None, describe(None, enabled=False))
+            if self.initial_gain:
+                self.exposure.gain = GainSchedule(
+                    self.exposure.fs, ramp_time=RAMP_TIME,
+                    gain_db=self.initial_gain)
+                status = f'off, {self.initial_gain:+.1f} dB'
+            else:
+                self.exposure.gain = None
+                status = describe(None, enabled=False)
+            self.report(None, status)
             return cb
         self.controller = LevelController(self.target_level, self.max_trim,
-                                          self.max_drift)
-        schedule = GainSchedule(self.exposure.fs, ramp_time=RAMP_TIME)
+                                          self.max_drift, self.initial_gain)
+        schedule = GainSchedule(self.exposure.fs, ramp_time=RAMP_TIME,
+                                gain_db=self.initial_gain)
         self.exposure.gain = schedule
         controller = self.controller
         sens = self.calibration.get_sens(1e3)
@@ -389,4 +470,4 @@ class LevelControl(ContinuousInput):
         self.report(None, describe(controller))
         return control_level(schedule, controller, sens, self.start,
                              self.end, int(round(self.window)), report,
-                             cb).send
+                             cb, rise_time=self.rise_time).send

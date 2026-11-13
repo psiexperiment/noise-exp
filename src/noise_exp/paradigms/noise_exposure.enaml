@@ -113,9 +113,10 @@ def running_rms(start, end, target):
 
 #: Columns of the level control's log (`level_control.csv`), one row per
 #: decision: when it was made (s), what it did, the median band level of the
-#: window (dB SPL), and the gain it set (dB, empty if unchanged).
-LEVEL_LOG_COLUMNS = ['time', 'action', 'level', 'target', 'trim', 'drift',
-                     'gain', 'message']
+#: window (dB SPL), and the gain it set (dB, empty if unchanged): `initial`
+#: (the operator's trim) plus `trim` (the loop's) plus `drift`.
+LEVEL_LOG_COLUMNS = ['time', 'action', 'level', 'target', 'initial', 'trim',
+                     'drift', 'gain', 'message']
 
 
 def report_level_control(label, store, record, status):
@@ -290,8 +291,18 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
 
             ContextRow:
                 name = 'exposure_level_control_limits'
-                fmt = ['Correct up to ±', max_trim, 'dB at the start, then ±',
-                       max_drift, 'dB']
+                fmt = ['Start with a trim of', level_trim, 'dB, then correct '
+                       'up to ±', max_trim, 'dB at the start and ±', max_drift,
+                       'dB after']
+
+                # The operator's own correction (e.g., from a pre-calibration
+                # of the booth), applied from the start whether or not the
+                # level is controlled; the loop corrects about it.
+                Parameter: level_trim:
+                    name = 'exposure_level_trim'
+                    label = 'exposure level trim (dB)'
+                    default = 0
+                    scope = 'experiment'
 
                 Parameter: max_trim:
                     name = 'exposure_level_control_max_trim'
@@ -394,6 +405,8 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                     window = C.exposure_level_control_window
                     max_trim = C.exposure_level_control_max_trim
                     max_drift = C.exposure_level_control_max_drift
+                    initial_gain = C.exposure_level_trim
+                    rise_time = C.exposure_bandlimited_fir_noise_burst_rise_time
                     start = steady_state(
                         C.exposure_bandlimited_fir_noise_burst_rise_time,
                         C.exposure_bandlimited_fir_noise_burst_duration)[0]
@@ -424,6 +437,8 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                 window = C.exposure_level_control_window
                 max_trim = C.exposure_level_control_max_trim
                 max_drift = C.exposure_level_control_max_drift
+                initial_gain = C.exposure_level_trim
+                rise_time = C.exposure_bandlimited_fir_noise_burst_rise_time
                 start = steady_state(
                     C.exposure_bandlimited_fir_noise_burst_rise_time,
                     C.exposure_bandlimited_fir_noise_burst_duration)[0]

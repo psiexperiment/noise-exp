@@ -134,6 +134,7 @@ LEVEL_CONTROL_SETTINGS = {
     'exposure_level_control_window': 10,
     'exposure_level_control_max_trim': 6,
     'exposure_level_control_max_drift': 2,
+    'exposure_level_trim': 0,
 }
 
 
@@ -171,6 +172,7 @@ def test_level_control_wired(running_experiment):
     from psiaudio.gain import GainSchedule
     from noise_exp.level_control import LevelControl
     controller = running_experiment.get_plugin('psi.controller')
+    context = running_experiment.get_plugin('psi.context')
     output = controller.get_output('exposure')
     band = controller.get_input('level_control_band')
     overall = controller.get_input('level_control_overall')
@@ -180,6 +182,9 @@ def test_level_control_wired(running_experiment):
         assert control.source.name == source
         assert control.exposure is output
         assert control.enabled
+        assert control.initial_gain == 0
+        assert control.rise_time == context.get_value(
+            'exposure_bandlimited_fir_noise_burst_rise_time')
     assert band.selected
     assert not overall.selected
 
@@ -194,6 +199,32 @@ def test_level_control_wired(running_experiment):
     finally:
         output.gain = None
         band.controller = None
+
+
+@pytest.mark.parametrize('trim', [0, 2.5])
+def test_level_trim_without_control(running_experiment, trim):
+    '''
+    With the level not controlled, the operator's trim still sets the
+    exposure's gain (and with no trim, the output has no gain).
+    '''
+    from psiaudio.gain import GainSchedule
+    controller = running_experiment.get_plugin('psi.controller')
+    output = controller.get_output('exposure')
+    band = controller.get_input('level_control_band')
+    try:
+        band.enabled = False
+        band.initial_gain = trim
+        band.configure_callback()
+        if trim:
+            assert isinstance(output.gain, GainSchedule)
+            assert output.gain.gain_db == trim
+        else:
+            assert output.gain is None
+        assert band.controller is None
+    finally:
+        output.gain = None
+        band.enabled = True
+        band.initial_gain = 0
 
 
 def test_level_plot_legend(running_experiment):

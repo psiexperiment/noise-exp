@@ -40,6 +40,45 @@ class TestTrim:
         assert 'more than the 6 dB allowed' in record['message']
 
 
+class TestInitialGain:
+    '''
+    The operator's trim: the exposure starts at it, and the loop's trim and
+    drift are about it.
+    '''
+
+    def test_gain_starts_at_initial(self):
+        c = LevelController(TARGET, initial=1.5)
+        assert c.gain == 1.5
+
+    def test_trim_is_about_initial(self):
+        c = LevelController(TARGET, initial=1.5)
+        record = c.update(TARGET + 0.5)
+        assert c.trim == pytest.approx(-0.5)
+        assert record['gain'] == pytest.approx(1.0)
+        assert record['initial'] == 1.5
+
+    def test_trim_bounded_about_initial(self):
+        c = LevelController(TARGET, max_trim=6, initial=-4)
+        record = c.update(TARGET - 8)
+        assert c.trim == 6
+        assert record['gain'] == pytest.approx(2)
+
+    def test_trip_about_initial(self):
+        c = LevelController(TARGET, max_trim=6, max_drift=2, initial=1)
+        c.update(TARGET)
+        loud = TARGET + lc.TRIP_LEVEL + 1
+        for _ in range(lc.TRIP_SECONDS):
+            record = c.check_second(loud)
+        assert record['action'] == 'trip'
+        assert record['gain'] == pytest.approx(-7)
+        assert c.gain == pytest.approx(-7)
+
+    def test_describe(self):
+        assert lc.describe(LevelController(TARGET)) == 'measuring'
+        assert lc.describe(LevelController(TARGET, initial=1.5)) == \
+            '+1.5 dB (measuring)'
+
+
 class TestDrift:
 
     def trimmed(self, **kw):
@@ -155,30 +194,38 @@ class Loop:
 
 
 def run_loop(plant_db, seconds=300, lookahead=5, window=10, start=2,
-             block=BLOCK, **controller_kw):
+             block=BLOCK, rise_time=0, initial=0, **controller_kw):
     '''
     Run the loop with an output that renders `lookahead` s ahead of what the
     microphone hears (as the hardware buffer does).
 
-    The exposure is a constant 1 (so each second's level is exact), heard
-    at TARGET dB SPL plus `plant_db(t)` (dB, the booth's offset at time t,
-    s) times the gain the loop set when the samples were rendered.
+    The exposure is a constant 1 (so each second's level is exact), after a
+    cos² onset ramp of `rise_time` s ending at `start`, heard at TARGET dB
+    SPL plus `plant_db(t)` (dB, the booth's offset at time t, s) times the
+    gain the loop set when the samples were rendered, starting at `initial`.
     '''
-    schedule = GainSchedule(FS, ramp_time=lc.RAMP_TIME)
-    controller = LevelController(TARGET, **controller_kw)
+    schedule = GainSchedule(FS, ramp_time=lc.RAMP_TIME, gain_db=initial)
+    controller = LevelController(TARGET, initial=initial, **controller_kw)
     records = []
     sens = TARGET
     pipeline = control_level(schedule, controller, sens, start, seconds,
-                             window, records.append, lambda data: None)
+                             window, records.append, lambda data: None,
+                             rise_time=rise_time)
     n = seconds * FS
+    t = np.arange(n) / FS
+    if rise_time > 0:
+        frac = np.clip((t - (start - rise_time)) / rise_time, 0, 1)
+        exposure = np.sin(np.pi / 2 * frac) ** 2
+    else:
+        exposure = np.ones(n)
     played = np.zeros(n)
-    plant = plant_db(np.arange(n) / FS)
+    plant = plant_db(t)
     mic = np.zeros(n)
     rendered = 0
     for i in range(0, n, block):
         while rendered < min(n, i + lookahead * FS + block):
-            played[rendered:rendered + block] = \
-                schedule.apply(rendered, np.ones(block))
+            s = slice(rendered, rendered + block)
+            played[s] = schedule.apply(rendered, exposure[s])
             rendered += block
         s = slice(i, i + block)
         mic[s] = played[s] * 10 ** (plant[s] / 20)
@@ -405,6 +452,103 @@ def test_nothing_before_steady_state():
     loop = run_loop(lambda t: np.full_like(t, -2.0), seconds=30, start=25)
     assert loop.records == []
     assert loop.schedule.changes == []
+
+
+# -------- trimming on the onset ramp --------
+
+class TestRampLevel:
+
+    def test_full_level(self):
+        assert lc.ramp_level(10, 11, 10, 5) == 0
+        assert lc.ramp_level(3, 4, 2, 0) == 0
+
+    def test_before_ramp(self):
+        assert lc.ramp_level(3, 4, 10, 5) == -np.inf
+        assert lc.ramp_level(1, 2, 2, 0) == -np.inf
+
+    def test_on_ramp(self):
+        '''
+        The power average of the cos² ramp's amplitude, squared, over the
+        second.
+        '''
+        start, rise = 20, 10
+        t = np.linspace(14, 15, 100001)
+        power = np.sin(np.pi / 2 * (t - (start - rise)) / rise) ** 4
+        expected = 10 * np.log10(power.mean())
+        assert lc.ramp_level(14, 15, start, rise) == \
+            pytest.approx(expected, abs=1e-4)
+
+    def test_half_way(self):
+        # At half the rise time, the amplitude is 0.5 (-6 dB).
+        assert lc.ramp_level(14.999, 15.001, 20, 10) == \
+            pytest.approx(-6.02, abs=0.01)
+
+
+@pytest.mark.parametrize('offset', [-2.5, 2.5])
+def test_trims_on_ramp_before_full_level(offset, plot):
+    '''
+    With a ramp long enough, the trim is measured on the ramp and is already
+    in place when the exposure reaches full level: nothing at full level is
+    played at the untrimmed gain, and it is not judged again.
+    '''
+    start = 21
+    loop = run_loop(lambda t: np.full_like(t, offset), seconds=120,
+                    start=start, rise_time=20, lookahead=5)
+    if plot.enabled:
+        plot(plot_loop(loop, f'Constant {offset:+} dB offset, 20 s ramp'))
+    trim = loop.records[0]
+    assert trim['action'] == 'trim'
+    assert trim['time'] <= start - 5
+    # Within the sampling of the simulated ramp.
+    assert trim['level'] == pytest.approx(TARGET + offset, abs=0.05)
+    assert loop.controller.gain == pytest.approx(-offset, abs=0.05)
+    full = loop.t >= start
+    np.testing.assert_allclose(loop.gain_db[full], loop.controller.gain)
+    assert set(actions(loop.records[1:])) == {'hold'}
+    assert len(loop.schedule.changes) == 1
+
+
+def test_long_ramp_trims_on_full_window():
+    '''
+    A ramp with more than a window of time to spare trims on a full window,
+    still on the ramp.
+    '''
+    start = 61
+    loop = run_loop(lambda t: np.full_like(t, 2.0), seconds=120,
+                    start=start, rise_time=60, lookahead=5)
+    trim = loop.records[0]
+    assert trim['action'] == 'trim'
+    # The top 6 dB of the ramp starts halfway up it, at 31 s.
+    assert trim['time'] == pytest.approx(31 + 10, abs=1)
+    np.testing.assert_allclose(loop.gain_db[loop.t >= start], -2, atol=0.05)
+
+
+def test_short_ramp_trims_after_window():
+    '''
+    With too few seconds of the ramp to judge (the default 1 s ramp), the
+    trim comes after a full window, as without the ramp.
+    '''
+    start = 2
+    loop = run_loop(lambda t: np.full_like(t, 2.0), seconds=60,
+                    start=start, rise_time=1)
+    trim = loop.records[0]
+    assert trim['action'] == 'trim'
+    # The window's first second is the ramp's.
+    assert trim['time'] == start + 9
+    assert loop.controller.gain == pytest.approx(-2, abs=0.1)
+
+
+def test_ramp_trim_with_initial_gain():
+    '''
+    The operator's trim is played from the start, and the loop's trim on the
+    ramp corrects what it leaves.
+    '''
+    start = 21
+    loop = run_loop(lambda t: np.full_like(t, 2.0), seconds=60,
+                    start=start, rise_time=20, initial=-1.5)
+    assert np.all(loop.gain_db[loop.t < loop.records[0]['time']] == -1.5)
+    assert loop.controller.trim == pytest.approx(-0.5, abs=0.05)
+    np.testing.assert_allclose(loop.gain_db[loop.t >= start], -2, atol=0.05)
 
 
 # -------- the envelope of a gain change --------
