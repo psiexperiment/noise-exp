@@ -36,7 +36,7 @@ def configure_experiment(pb, fs, t0_end, **kwargs):
     pb.maximum = int(round(t0_end * fs))
 
 
-def set_level_limits(vb, level):
+def set_level_limits(vb, level, **kwargs):
     '''
     Center the level plot on the target level, `LEVEL_PLOT_SPAN` dB either
     side.
