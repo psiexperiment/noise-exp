@@ -52,3 +52,35 @@ level asked for. Exposures run before November 2026 scaled it differently
 usually missed the level by several dB. To repeat one of those exposures
 exactly, set "legacy level scaling" to "yes" in the Exposure settings in the
 experiment window. It is saved with the data, like the other settings.
+
+## Level control
+
+The monitor microphone is the ground truth, but it sits elsewhere in the
+booth than where the speaker was calibrated, so it can read a few dB off
+target, and the level can drift. "Hold ... level at target" (on by default)
+adjusts the exposure's gain from the microphone's level, measured in the
+exposure band (the default) or overall. At exposure levels, ambient sound
+and the animals add little to the overall level, so either works; the band
+level is the one psiaudio sets.
+
+* After the first window at full level (10 s by default), it trims the gain
+  so the band level is at target, by at most the "at the start" limit (6 dB).
+  A trim of more than 3 dB is reported: the speaker calibration may need
+  redoing.
+* From then on, it corrects drift, half the remaining error at a time, by at
+  most the "then" limit (2 dB) on top of the trim.
+
+Each window's level is the median of its 1 s levels, so brief noises from
+the animals don't move the gain, and only seconds played at the gain last set
+count. The loop stops and holds the gain (shown as FROZEN under "Level
+correction") if the level is more than 10 dB below target (check the
+microphone) or the drift correction stays at its limit. If the level is more
+than 6 dB above target for 3 s, the exposure is turned down by the full
+range of the correction and the loop stops. Every decision is saved with the
+data in `level_control.csv`.
+
+The loop is off when "legacy level scaling" is on, since that repeats an
+earlier, uncontrolled exposure.
+
+The level plot shows the overall level (black) and the level in the exposure
+band (green), each over 1 s.

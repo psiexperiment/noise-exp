@@ -20,8 +20,10 @@ from psi.controller.api import (
 )
 from psi.core.api import StatusItem
 from psi.data.api import ChannelPlot, TimeContainer, ViewBox
-from psi.data.sinks.api import BinaryStore
+from psi.data.sinks.api import BinaryStore, TableStore
 from psi.token.primitives import BandlimitedFIRNoise, Cos2Envelope
+
+from noise_exp.level_control import LevelControl
 
 EXPERIMENT = __name__.rsplit('.', 1)[-1]
 EXPOSURE_START_DELAY = 1
@@ -97,6 +99,26 @@ def running_rms(start, end, target):
         target(np.sqrt(running_sum / running_n))
 
 
+#: Columns of the level control's log (`level_control.csv`), one row per
+#: decision: when it was made (s), what it did, the median band level of the
+#: window (dB SPL), and the gain it set (dB, empty if unchanged).
+LEVEL_LOG_COLUMNS = ['time', 'action', 'level', 'target', 'trim', 'drift',
+                     'gain', 'message']
+
+
+def report_level_control(label, store, record, status):
+    '''
+    Show the level control's status, and log its decision, from the
+    acquisition thread (see `update_label`).
+    '''
+    deferred_call(setattr, label, 'text', status)
+    if record is not None:
+        row = {c: record[c] for c in LEVEL_LOG_COLUMNS}
+        if row['gain'] is None:
+            row['gain'] = np.nan
+        deferred_call(store.process_table, row)
+
+
 enamldef NoiseControllerManifest(ControllerManifest): manifest:
 
     Extension:
@@ -105,6 +127,9 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
 
         BinaryStore:
             continuous_inputs = ['monitor_microphone', 'noise_level']
+
+        TableStore: level_store:
+            name = 'level_control'
 
     # The exposure is always FIR noise (the output is not configurable). Its
     # blocks are named `burst` and `noise` so that the settings psi makes for
@@ -222,6 +247,52 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                     choices = {'yes': True, 'no': False}
                     scope = 'experiment'
 
+            # The feedback loop holding the level at target, measured in the
+            # exposure band or overall (see `noise_exp.level_control`). Off
+            # with legacy level scaling, which repeats an earlier,
+            # uncontrolled exposure.
+            ContextRow:
+                name = 'exposure_level_control'
+                fmt = ['Hold', measure, 'level at target', level_control,
+                       'judging the median of every', control_window, 's']
+
+                EnumParameter: measure:
+                    name = 'exposure_level_control_measure'
+                    label = 'exposure level control measure'
+                    default = 'band'
+                    choices = {'band': "'band'", 'overall': "'overall'"}
+                    scope = 'experiment'
+
+                EnumParameter: level_control:
+                    name = 'exposure_level_control'
+                    label = 'hold exposure level at target'
+                    default = 'yes'
+                    choices = {'yes': True, 'no': False}
+                    scope = 'experiment'
+
+                Parameter: control_window:
+                    name = 'exposure_level_control_window'
+                    label = 'exposure level control window (s)'
+                    default = 10
+                    scope = 'experiment'
+
+            ContextRow:
+                name = 'exposure_level_control_limits'
+                fmt = ['Correct up to ±', max_trim, 'dB at the start, then ±',
+                       max_drift, 'dB']
+
+                Parameter: max_trim:
+                    name = 'exposure_level_control_max_trim'
+                    label = 'exposure level control max trim (dB)'
+                    default = 6
+                    scope = 'experiment'
+
+                Parameter: max_drift:
+                    name = 'exposure_level_control_max_drift'
+                    label = 'exposure level control max drift (dB)'
+                    default = 2
+                    scope = 'experiment'
+
         Expression:
             parameter = 'exposure_burst_duration'
             expression = 'exposure_bandlimited_fir_noise_burst_duration'
@@ -293,11 +364,49 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
                         Callback:
                             function = partial(update_label, average_band_level)
 
+                LevelControl:
+                    name = 'level_control_band'
+                    selected = C.exposure_level_control_measure == 'band'
+                    exposure = output
+                    enabled = (C.exposure_level_control and
+                               not C.exposure_bandlimited_noise_legacy_level)
+                    target_level = C.exposure_bandlimited_noise_level
+                    window = C.exposure_level_control_window
+                    max_trim = C.exposure_level_control_max_trim
+                    max_drift = C.exposure_level_control_max_drift
+                    start = steady_state(
+                        C.exposure_bandlimited_fir_noise_burst_rise_time,
+                        C.exposure_bandlimited_fir_noise_burst_duration)[0]
+                    end = steady_state(
+                        C.exposure_bandlimited_fir_noise_burst_rise_time,
+                        C.exposure_bandlimited_fir_noise_burst_duration)[1]
+                    report = partial(report_level_control, level_correction,
+                                     level_store)
+
             RMS:
                 name = 'RMS'
                 duration = 1
                 SPL:
                     name = 'noise_level'
+
+            LevelControl:
+                name = 'level_control_overall'
+                selected = C.exposure_level_control_measure == 'overall'
+                exposure = output
+                enabled = (C.exposure_level_control and
+                           not C.exposure_bandlimited_noise_legacy_level)
+                target_level = C.exposure_bandlimited_noise_level
+                window = C.exposure_level_control_window
+                max_trim = C.exposure_level_control_max_trim
+                max_drift = C.exposure_level_control_max_drift
+                start = steady_state(
+                    C.exposure_bandlimited_fir_noise_burst_rise_time,
+                    C.exposure_bandlimited_fir_noise_burst_duration)[0]
+                end = steady_state(
+                    C.exposure_bandlimited_fir_noise_burst_rise_time,
+                    C.exposure_bandlimited_fir_noise_burst_duration)[1]
+                report = partial(report_level_control, level_correction,
+                                 level_store)
 
             # Beside the RMS, not inside it, so the average is of the signal
             # (like the band's): inside, it averaged the 1 s levels, leaving
@@ -339,6 +448,12 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
             label = 'Average level in band (dB SPL)'
 
             Label: average_band_level:
+                text = ''
+
+        StatusItem:
+            label = 'Level correction'
+
+            Label: level_correction:
                 text = ''
 
     Extension:
@@ -387,3 +502,11 @@ enamldef NoiseControllerManifest(ControllerManifest): manifest:
 
                 ChannelPlot:
                     source_name = 'noise_level'
+                    label = 'overall'
+                    show_in_legend = True
+
+                ChannelPlot:
+                    source_name = 'band_noise_level'
+                    label = 'in band'
+                    pen_color = 'green'
+                    show_in_legend = True

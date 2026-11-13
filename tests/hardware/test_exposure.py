@@ -48,6 +48,9 @@ PARAMETERS = {
     'max_correction': 20,
     'duration': 10,
     'rise_time': 1,
+    # The recording is compared with the exposure played at a fixed gain, so
+    # the loop holding the band level must not change it.
+    'level_control': False,
 }
 
 #: The context item each setting is. Settings missing here are fixed by the
@@ -61,6 +64,7 @@ CONTEXT_NAMES = {
     'max_correction': 'exposure_bandlimited_noise_max_correction',
     'duration': 'exposure_bandlimited_fir_noise_burst_duration',
     'rise_time': 'exposure_bandlimited_fir_noise_burst_rise_time',
+    'level_control': 'exposure_level_control',
 }
 
 #: Long enough for psi to start, the exposure, and psi to save and quit.

@@ -127,6 +127,16 @@ EXPOSURE_SETTINGS = {
 }
 
 
+#: Settings of the feedback loop holding the band level, and their defaults.
+LEVEL_CONTROL_SETTINGS = {
+    'exposure_level_control_measure': 'band',
+    'exposure_level_control': True,
+    'exposure_level_control_window': 10,
+    'exposure_level_control_max_trim': 6,
+    'exposure_level_control_max_drift': 2,
+}
+
+
 def test_exposure_settings_in_rows(running_experiment):
     '''
     The exposure's settings are laid out as rows in their own group, and
@@ -137,9 +147,58 @@ def test_exposure_settings_in_rows(running_experiment):
     group = context.context_groups['exposure_settings']
     rows = [c for c in group.children if isinstance(c, ContextRow)]
     in_rows = {i.name for r in rows for i in r.fmt if not isinstance(i, str)}
-    assert in_rows == set(EXPOSURE_SETTINGS)
-    for name in EXPOSURE_SETTINGS:
+    assert in_rows == set(EXPOSURE_SETTINGS) | set(LEVEL_CONTROL_SETTINGS)
+    for name in in_rows:
         assert context.context_items[name].visible
+
+
+@pytest.mark.parametrize('name,default', list(LEVEL_CONTROL_SETTINGS.items()))
+def test_level_control_defaults(running_experiment, name, default):
+    context = running_experiment.get_plugin('psi.context')
+    assert context.get_value(name) == default
+
+
+@pytest.mark.parametrize('measure,source', [
+    ('band', 'microphone_band_filtered'),
+    ('overall', 'microphone_filtered'),
+])
+def test_level_control_wired(running_experiment, measure, source):
+    '''
+    A level control is attached to each of the band-filtered and overall
+    microphone signals; the one measuring the level chosen (band, by
+    default) controls the exposure's gain, and the other does nothing.
+    '''
+    from psiaudio.gain import GainSchedule
+    from noise_exp.level_control import LevelControl
+    controller = running_experiment.get_plugin('psi.controller')
+    output = controller.get_output('exposure')
+    control = controller.get_input(f'level_control_{measure}')
+    assert isinstance(control, LevelControl)
+    assert control.source.name == source
+    assert control.exposure is output
+    assert control.enabled
+    assert isinstance(output.gain, GainSchedule)
+    if measure == 'band':
+        assert control.selected
+        assert control.controller is not None
+    else:
+        assert not control.selected
+        assert control.controller is None
+
+
+def test_level_plot_legend(running_experiment):
+    '''
+    The level plot shows the overall and in-band 1 s levels, named in its
+    legend, the band in green.
+    '''
+    from enaml.qt.QtWidgets import QApplication
+    QApplication.processEvents()
+    data = running_experiment.get_plugin('psi.data')
+    container = data.find_plot_container('noise_level_container')
+    labels = [label.text for _, label in container.legend.items]
+    assert labels == ['overall', 'in band']
+    band = data.find_plot('band_noise_level_plot')
+    assert band.pen.color().name() == '#008000'
 
 
 @pytest.mark.parametrize('setting,token_setting',
