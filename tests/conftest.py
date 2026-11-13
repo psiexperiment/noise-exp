@@ -25,6 +25,47 @@ def pytest_addoption(parser):
         help='Rewrite the golden exposure (tests/golden) from the current '
         'code instead of checking against it. Review the diff before '
         'committing it.')
+    parser.addoption(
+        '--plots', action='store_true',
+        help='Save the diagnostic figures of the tests that make them to '
+        'tests/plots, named after each test.')
+
+
+class Plotter:
+    '''
+    What the `plot` fixture gives a test. Build the figure only when
+    `enabled` (so matplotlib is needed only with --plots), then call it with
+    the figure to save it.
+    '''
+    def __init__(self, folder, name):
+        self.folder = folder
+        self.name = name
+
+    @property
+    def enabled(self):
+        return self.folder is not None
+
+    def __call__(self, figure, suffix=''):
+        import matplotlib.pyplot as plt
+        self.folder.mkdir(parents=True, exist_ok=True)
+        name = f'{self.name}-{suffix}' if suffix else self.name
+        figure.savefig(self.folder / f'{name}.png', dpi=110,
+                       bbox_inches='tight')
+        plt.close(figure)
+
+
+@pytest.fixture
+def plot(request):
+    '''
+    Saves a test's diagnostic figures to tests/plots when pytest is run with
+    --plots; otherwise `plot.enabled` is False and nothing is drawn.
+    '''
+    folder = None
+    if request.config.getoption('--plots'):
+        import matplotlib
+        matplotlib.use('Agg')
+        folder = request.config.rootpath / 'tests' / 'plots'
+    return Plotter(folder, request.node.name)
 
 
 #: What the launcher (`src/noise_exp/gui.enaml`) puts in the environment when

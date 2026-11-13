@@ -79,3 +79,6 @@ sandbox/
 
 # Loopback test runs (tests/hardware)
 tests/hardware/results/
+
+# Diagnostic figures (pytest --plots)
+tests/plots/
